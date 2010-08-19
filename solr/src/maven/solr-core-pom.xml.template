@@ -108,6 +108,11 @@
       <artifactId>commons-fileupload</artifactId>
       <version>1.2.1</version>
     </dependency>
+    <dependency>
+      <groupId>org.apache.velocity</groupId>
+      <artifactId>velocity</artifactId>
+      <version>1.6.1</version>
+    </dependency>
 
     <!-- Solr specific commons csv -->
     <dependency>
@@ -115,24 +120,6 @@
       <artifactId>solr-commons-csv</artifactId>
       <version>@version@</version>
     </dependency>
-
-    <!-- Stax : we could exclude this because already dependancy of solrj -->
-    <dependency>
-      <groupId>org.codehaus.woodstox</groupId>
-      <artifactId>wstx-asl</artifactId>
-      <version>3.2.7</version>
-      <exclusions>
-        <exclusion>
-          <groupId>stax</groupId>
-          <artifactId>stax-api</artifactId>
-        </exclusion>
-      </exclusions>
-    </dependency>
-    <dependency>
-      <groupId>org.apache.geronimo.specs</groupId>
-      <artifactId>geronimo-stax-api_1.0_spec</artifactId>
-      <version>1.0.1</version>
-    </dependency>   
 
   </dependencies>
 

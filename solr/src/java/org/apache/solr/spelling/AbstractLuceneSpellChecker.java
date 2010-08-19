@@ -22,7 +22,12 @@ import java.io.File;
 import java.io.IOException;
 import java.util.Arrays;
 import java.util.Collection;
+import java.util.Comparator;
 import java.util.List;
+
+import org.apache.lucene.search.spell.SuggestWord;
+import org.apache.lucene.search.spell.SuggestWordFrequencyComparator;
+import org.apache.lucene.search.spell.SuggestWordQueue;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -60,6 +65,11 @@ public abstract class AbstractLuceneSpellChecker extends SolrSpellChecker {
   public static final String ACCURACY = "accuracy";
   public static final String STRING_DISTANCE = "distanceMeasure";
   public static final String FIELD_TYPE = "fieldType";
+  public static final String COMPARATOR_CLASS = "comparatorClass";
+
+  public static final String SCORE_COMP = "score";
+  public static final String FREQ_COMP = "freq";
+
   protected String field;
   protected String fieldTypeName;
   protected org.apache.lucene.search.spell.SpellChecker spellChecker;
@@ -89,6 +99,19 @@ public abstract class AbstractLuceneSpellChecker extends SolrSpellChecker {
       }
     }
     sourceLocation = (String) config.get(LOCATION);
+    String compClass = (String) config.get(COMPARATOR_CLASS);
+    Comparator<SuggestWord> comp = null;
+    if (compClass != null){
+      if (compClass.equalsIgnoreCase(SCORE_COMP)){
+        comp = SuggestWordQueue.DEFAULT_COMPARATOR;
+      } else if (compClass.equalsIgnoreCase(FREQ_COMP)){
+        comp = new SuggestWordFrequencyComparator();
+      } else{//must be a FQCN
+        comp = (Comparator<SuggestWord>) core.getResourceLoader().newInstance(compClass);
+      }
+    } else {
+      comp = SuggestWordQueue.DEFAULT_COMPARATOR;
+    }
     field = (String) config.get(FIELD);
     String strDistanceName = (String)config.get(STRING_DISTANCE);
     if (strDistanceName != null) {
@@ -99,7 +122,7 @@ public abstract class AbstractLuceneSpellChecker extends SolrSpellChecker {
     }
     try {
       initIndex();
-      spellChecker = new SpellChecker(index, sd);
+      spellChecker = new SpellChecker(index, sd, comp);
     } catch (IOException e) {
       throw new RuntimeException(e);
     }
@@ -127,29 +150,30 @@ public abstract class AbstractLuceneSpellChecker extends SolrSpellChecker {
     return name;
   }
   
-  @SuppressWarnings("unchecked")
-  public SpellingResult getSuggestions(Collection<Token> tokens,
-                                       IndexReader reader, int count, boolean onlyMorePopular,
-                                       boolean extendedResults)
-          throws IOException {
-    SpellingResult result = new SpellingResult(tokens);
-    reader = determineReader(reader);
+  @Override
+  public SpellingResult getSuggestions(SpellingOptions options) throws IOException {
+    SpellingResult result = new SpellingResult(options.tokens);
+    IndexReader reader = determineReader(options.reader);
     Term term = field != null ? new Term(field, "") : null;
-    for (Token token : tokens) {
+    float theAccuracy = (options.accuracy == Float.MIN_VALUE) ? spellChecker.getAccuracy() : options.accuracy;
+    
+    int count = (int) Math.max(options.count, AbstractLuceneSpellChecker.DEFAULT_SUGGESTION_COUNT);
+    for (Token token : options.tokens) {
       String tokenText = new String(token.buffer(), 0, token.length());
-      String[] suggestions = spellChecker.suggestSimilar(tokenText, (int) Math.max(count, AbstractLuceneSpellChecker.DEFAULT_SUGGESTION_COUNT),
+      String[] suggestions = spellChecker.suggestSimilar(tokenText,
+              count,
             field != null ? reader : null, //workaround LUCENE-1295
             field,
-            onlyMorePopular);
+            options.onlyMorePopular, theAccuracy);
       if (suggestions.length == 1 && suggestions[0].equals(tokenText)) {
         //These are spelled the same, continue on
         continue;
       }
 
-      if (extendedResults == true && reader != null && field != null) {
+      if (options.extendedResults == true && reader != null && field != null) {
         term = term.createTerm(tokenText);
         result.add(token, reader.docFreq(term));
-        int countLimit = Math.min(count, suggestions.length);
+        int countLimit = Math.min(options.count, suggestions.length);
         for (int i = 0; i < countLimit; i++) {
           term = term.createTerm(suggestions[i]);
           result.add(token, suggestions[i], reader.docFreq(term));
@@ -157,8 +181,8 @@ public abstract class AbstractLuceneSpellChecker extends SolrSpellChecker {
       } else {
         if (suggestions.length > 0) {
           List<String> suggList = Arrays.asList(suggestions);
-          if (suggestions.length > count) {
-            suggList = suggList.subList(0, count);
+          if (suggestions.length > options.count) {
+            suggList = suggList.subList(0, options.count);
           }
           result.add(token, suggList);
         }
@@ -229,5 +253,9 @@ public abstract class AbstractLuceneSpellChecker extends SolrSpellChecker {
 
   public StringDistance getStringDistance() {
     return sd;
+  }
+
+  public SpellChecker getSpellChecker() {
+    return spellChecker;
   }
 }

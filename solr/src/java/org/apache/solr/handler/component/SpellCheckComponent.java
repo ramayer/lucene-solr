@@ -23,9 +23,13 @@ import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
 import org.apache.lucene.search.spell.LevensteinDistance;
+import org.apache.lucene.search.spell.SpellChecker;
 import org.apache.lucene.search.spell.StringDistance;
+import org.apache.lucene.search.spell.SuggestWord;
+import org.apache.lucene.search.spell.SuggestWordQueue;
 import org.apache.lucene.util.PriorityQueue;
 import org.apache.solr.client.solrj.response.SpellCheckResponse;
+import org.apache.solr.common.params.ModifiableSolrParams;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -142,8 +146,12 @@ public class SpellCheckComponent extends SearchComponent implements SolrCoreAwar
         NamedList response = new SimpleOrderedMap();
         IndexReader reader = rb.req.getSearcher().getReader();
         boolean collate = params.getBool(SPELLCHECK_COLLATE, false);
-        SpellingResult spellingResult = spellChecker.getSuggestions(tokens,
-            reader, count, onlyMorePopular, extendedResults);
+        float accuracy = params.getFloat(SPELLCHECK_ACCURACY, Float.MIN_VALUE);
+        SolrParams customParams = getCustomParams(getDictionaryName(params), params);
+        SpellingOptions options = new SpellingOptions(tokens, reader, count, onlyMorePopular, extendedResults,
+                accuracy, customParams);
+
+        SpellingResult spellingResult = spellChecker.getSuggestions(options);
         if (spellingResult != null) {
           response.add("suggestions", toNamedList(spellingResult, q,
               extendedResults, collate));
@@ -157,59 +165,25 @@ public class SpellCheckComponent extends SearchComponent implements SolrCoreAwar
     }
   }
 
-  static class SuggestWordQueue extends PriorityQueue {
-    SuggestWordQueue(int size) {
-      initialize(size);
-    }
-
-    @Override
-    protected boolean lessThan(Object a, Object b) {
-      SuggestWord wa = (SuggestWord) a;
-      SuggestWord wb = (SuggestWord) b;
-      int val = wa.compareTo(wb);
-      return val < 0;
-    }
-  }
-
   /**
-   * Borrowed from Lucene SpellChecker
+   * For every param that is of the form "spellcheck.[dictionary name].XXXX=YYYY, add
+   * XXXX=YYYY as a param to the custom param list
+   * @param params The original SolrParams
+   * @return The new Params
    */
-  static class SuggestWord {
-    /**
-     * the score of the word
-     */
-    public float score;
-
-    /**
-     * The freq of the word
-     */
-    public int freq;
-
-    /**
-     * the suggested word
-     */
-    public String string;
-
-    public final int compareTo(SuggestWord a) {
-      // first criteria: the edit distance
-      if (score > a.score) {
-        return 1;
+  protected SolrParams getCustomParams(String dictionary, SolrParams params) {
+    ModifiableSolrParams result = new ModifiableSolrParams();
+    Iterator<String> iter = params.getParameterNamesIterator();
+    String prefix = SpellingParams.SPELLCHECK_PREFIX + "." + dictionary + ".";
+    while (iter.hasNext()){
+      String nxt = iter.next();
+      if (nxt.startsWith(prefix)){
+        result.add(nxt.substring(prefix.length()), params.getParams(nxt));
       }
-      if (score < a.score) {
-        return -1;
-      }
-
-      // second criteria (if first criteria is equal): the popularity
-      if (freq > a.freq) {
-        return 1;
-      }
-
-      if (freq < a.freq) {
-        return -1;
-      }
-      return 0;
     }
+    return result;
   }
+
 
   @Override
   public void modifyRequest(ResponseBuilder rb, SearchComponent who, ShardRequest sreq) {
@@ -391,13 +365,17 @@ public class SpellCheckComponent extends SearchComponent implements SolrCoreAwar
   }
 
   protected SolrSpellChecker getSpellChecker(SolrParams params) {
+    return spellCheckers.get(getDictionaryName(params));
+  }
+
+  private String getDictionaryName(SolrParams params) {
     String dictName = params.get(SPELLCHECK_DICT);
     if (dictName == null) {
       dictName = SolrSpellChecker.DEFAULT_DICTIONARY_NAME;
     }
-    return spellCheckers.get(dictName);
+    return dictName;
   }
-  
+
   /**
    * @return the spellchecker registered to a given name
    */
