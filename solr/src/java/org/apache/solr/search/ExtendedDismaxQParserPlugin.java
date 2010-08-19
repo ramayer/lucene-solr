@@ -112,14 +112,14 @@ class ExtendedDismaxQParser extends QParser {
     }
     
     // Boosted phrase of the full query string
-    Map<String,Float> phraseFields = 
-      U.parseFieldBoosts(solrParams.getParams(DMP.PF));
+    Map<Integer,Map<String,Float>> phraseFields = 
+      U.parseFieldBoostsAndSlop(solrParams.getParams(DMP.PF));
     // Boosted Bi-Term Shingles from the query string
-    Map<String,Float> phraseFields2 = 
-      U.parseFieldBoosts(solrParams.getParams("pf2"));
+    Map<Integer,Map<String,Float>> phraseFields2 = 
+      U.parseFieldBoostsAndSlop(solrParams.getParams("pf2"));
     // Boosted Tri-Term Shingles from the query string
-    Map<String,Float> phraseFields3 = 
-      U.parseFieldBoosts(solrParams.getParams("pf3"));
+    Map<Integer,Map<String,Float>> phraseFields3 = 
+      U.parseFieldBoostsAndSlop(solrParams.getParams("pf3"));
 
     float tiebreaker = solrParams.getFloat(DMP.TIE, 0.0f);
 
@@ -312,13 +312,25 @@ class ExtendedDismaxQParser extends QParser {
         }
 
         // full phrase...
-        addShingledPhraseQueries(query, normalClauses, phraseFields, 0, 
-                                 tiebreaker, pslop);
+        for (Map.Entry<Integer,Map<String,Float>> ent:phraseFields.entSet()) {
+					Integer slop = (ent.getKey() == null) ? pslop : ent.getKey();
+          Map<String,Float> pf = ent.getValue();
+          addShingledPhraseQueries(query, normalClauses, pf, 0,  
+                                  tiebreaker, slop);
+        }
         // shingles...
-        addShingledPhraseQueries(query, normalClauses, phraseFields2, 2,  
-                                 tiebreaker, pslop);
-        addShingledPhraseQueries(query, normalClauses, phraseFields3, 3,
-                                 tiebreaker, pslop);
+        for (Map.Entry<Integer,Map<String,Float>> ent:phraseFields2.entSet()) {
+					Integer slop = (ent.getKey() == null) ? pslop : ent.getKey();
+          Map<String,Float> pf = ent.getValue();
+          addShingledPhraseQueries(query, normalClauses, pf, 2,  
+                                   tiebreaker, slop);
+        }
+        for (Map.Entry<Integer,Map<String,Float>> ent:phraseFields3.entSet()) {
+          Integer slop = (ent.getKey() == null) ? pslop : ent.getKey();
+          Map<String,Float> pf = ent.getValue();
+          addShingledPhraseQueries(query, normalClauses, pf, 3,
+                                  tiebreaker, slop);
+        }
         
       }
     }

@@ -584,6 +584,63 @@ public class SolrPluginUtils {
     }
     return out;
   }
+
+  /**
+   * Very similar to <code>parseFieldBosts(String)</code> above - 
+   * except also parses out an optional "slop" value prefixed by "~".
+   *
+   * Given a string containing fieldNames and boost info and slop info,
+   * converts it to a Map from field name to boost info and slop info.
+   *
+   * <p>
+   * Doesn't care if boost info is negative, you're on your own.
+   * Doesn't care if slop info is negative, you're on your own.
+   * </p>
+   * <p>
+   * Doesn't care if boost info is missing, defaults 
+   * Doesn't care if slop info is missing, defaults to 0
+   * </p>
+   *
+   * @param in a String like "fieldOne^2.3 fieldTwo fieldThree~5^-0.4 fieldFour~10"
+   * @return Map of 1 =&gt; {fieldOne =&gt; 2.3, fieldTwo =&gt; null, }, 5 =&gt; {fieldThree =&gt; -0.4}, ...
+   */
+  public static Map<Integer,Map<String,Float>> parseFieldBoostsAndSlop(String in) {
+    return parseFieldBoostsAndSlop(new String[]{in});
+  }
+  /**
+   * Like <code>parseFieldBoostsAndSlop(String)</code>, but parses all the strings
+   * in the provided array (which may be null).
+   *
+   * Also much like <code>parseFieldBoosts(String[] fieldLists)</code> above, but
+   * allows for an optional slop value prefixed by "~".
+   *
+   * @param fieldLists an array of Strings eg. <code>{"fieldOne^2.3", "fieldTwo", fieldThree~5^-0.4}</code>
+   * @return Map of 1 =&gt; {fieldOne =&gt; 2.3, fieldTwo =&gt; null, }, 5 =&gt; {fieldThree =&gt; -0.4}
+   */
+  public static Map<Integer,Map<String,Float>> parseFieldBoostsAndSlop(String[] fieldLists) {
+    if (null == fieldLists || 0 == fieldLists.length) {
+			return new HashMap<Integer,Map<String,Float>>();
+    }
+    Map<Integer,Map<String, Float>> out = new HashMap<Integer,Map<String,Float>>(7);
+    for (String in : fieldLists) {
+      if (null == in || "".equals(in.trim()))
+        continue;
+      String[] bb = in.trim().split("\\s+");
+      for (String s : bb) {
+        String[] bbb = s.split("\\^");
+        String[] bbbb = bbb[0].split("~");
+        String field = bbbb[0];
+        Integer slop  = (2 == bbbb.length) ? Integer.valueOf(bbbb[1]) : null;
+				Float   boost = (1 == bbb.length) ? null : Float.valueOf(bbb[1]);
+        if (out.get(slop) == null) {
+					out.put(slop,new HashMap<String,Float>(7));
+				}
+        out.get(slop).put(field, boost);
+      }
+    }
+    return out;
+  }
+
   /**
    * Given a string containing functions with optional boosts, returns
    * an array of Queries representing those functions with the specified
