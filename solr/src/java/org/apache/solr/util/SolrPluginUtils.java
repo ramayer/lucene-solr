@@ -601,11 +601,11 @@ public class SolrPluginUtils {
    * Doesn't care if slop info is missing, defaults to 0
    * </p>
    *
-   * @param in a String like "fieldOne^2.3 fieldTwo fieldThree~5^-0.4 fieldFour~10"
-   * @return Map of 1 =&gt; {fieldOne =&gt; 2.3, fieldTwo =&gt; null, }, 5 =&gt; {fieldThree =&gt; -0.4}, ...
+   * @param in a String like <code>"fieldOne^2.3 fieldTwo fieldThree~5^-0.4 fieldFour~10"</code>; and wordGrams (0=all words, 2,3 = shingle size)
+   * @return FieldParams containing the fieldname,boost,slop,and shingle size
    */
-  public static Map<Integer,Map<String,Float>> parseFieldBoostsAndSlop(String in) {
-    return parseFieldBoostsAndSlop(new String[]{in});
+  public static List<FieldParams> parseFieldBoostsAndSlop(String in,int wordGrams) {
+    return parseFieldBoostsAndSlop(new String[]{in},wordGrams);
   }
   /**
    * Like <code>parseFieldBoostsAndSlop(String)</code>, but parses all the strings
@@ -614,14 +614,14 @@ public class SolrPluginUtils {
    * Also much like <code>parseFieldBoosts(String[] fieldLists)</code> above, but
    * allows for an optional slop value prefixed by "~".
    *
-   * @param fieldLists an array of Strings eg. <code>{"fieldOne^2.3", "fieldTwo", fieldThree~5^-0.4}</code>
-   * @return Map of 1 =&gt; {fieldOne =&gt; 2.3, fieldTwo =&gt; null, }, 5 =&gt; {fieldThree =&gt; -0.4}
+   * @param fieldLists an array of Strings eg. <code>{"fieldOne^2.3", "fieldTwo", fieldThree~5^-0.4}</code>; and wordGrams (0=all words, 2,3 = shingle size)
+   * @return FieldParams containing the fieldname,boost,slop,and shingle size
    */
-  public static Map<Integer,Map<String,Float>> parseFieldBoostsAndSlop(String[] fieldLists) {
+  public static List<FieldParams> parseFieldBoostsAndSlop(String[] fieldLists,int wordGrams) {
     if (null == fieldLists || 0 == fieldLists.length) {
-			return new HashMap<Integer,Map<String,Float>>();
+        return new ArrayList<FieldParams>();
     }
-    Map<Integer,Map<String, Float>> out = new HashMap<Integer,Map<String,Float>>(7);
+    List<FieldParams> out = new ArrayList<FieldParams>();
     for (String in : fieldLists) {
       if (null == in || "".equals(in.trim()))
         continue;
@@ -631,11 +631,9 @@ public class SolrPluginUtils {
         String[] bbbb = bbb[0].split("~");
         String field = bbbb[0];
         Integer slop  = (2 == bbbb.length) ? Integer.valueOf(bbbb[1]) : null;
-				Float   boost = (1 == bbb.length) ? null : Float.valueOf(bbb[1]);
-        if (out.get(slop) == null) {
-					out.put(slop,new HashMap<String,Float>(7));
-				}
-        out.get(slop).put(field, boost);
+        Float   boost = (1 == bbb.length) ? 1  : Float.valueOf(bbb[1]);
+        FieldParams fp = new FieldParams(field,wordGrams,slop,boost);
+        out.add(fp);
       }
     }
     return out;
