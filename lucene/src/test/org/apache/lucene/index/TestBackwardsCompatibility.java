@@ -46,10 +46,10 @@ import org.apache.lucene.search.TermQuery;
 import org.apache.lucene.search.NumericRangeQuery;
 import org.apache.lucene.store.Directory;
 import org.apache.lucene.store.FSDirectory;
-import org.apache.lucene.store.MockRAMDirectory;
 import org.apache.lucene.util.LuceneTestCase;
 import org.apache.lucene.util._TestUtil;
 import org.apache.lucene.util.BytesRef;
+import org.apache.lucene.util.Bits;
 
 /*
   Verify we can read the pre-4.0 file format, do searches
@@ -310,8 +310,10 @@ public class TestBackwardsCompatibility extends LuceneTestCase {
 
     _TestUtil.checkIndex(dir);
 
+    final Bits delDocs = MultiFields.getDeletedDocs(reader);
+
     for(int i=0;i<35;i++) {
-      if (!reader.isDeleted(i)) {
+      if (!delDocs.get(i)) {
         Document d = reader.document(i);
         List<Fieldable> fields = d.getFields();
         if (d.getField("content3") == null) {
@@ -370,7 +372,6 @@ public class TestBackwardsCompatibility extends LuceneTestCase {
     Directory dir = FSDirectory.open(new File(dirName));
     // open writer
     IndexWriter writer = new IndexWriter(dir, newIndexWriterConfig(random, TEST_VERSION_CURRENT, new MockAnalyzer()).setOpenMode(OpenMode.APPEND));
-
     // add 10 docs
     for(int i=0;i<10;i++) {
       addDoc(writer, 35+i);
@@ -379,11 +380,11 @@ public class TestBackwardsCompatibility extends LuceneTestCase {
     // make sure writer sees right total -- writer seems not to know about deletes in .del?
     final int expected;
     if (compare(origDirName, "24") < 0) {
-      expected = 45;
+      expected = 44;
     } else {
-      expected = 46;
+      expected = 45;
     }
-    assertEquals("wrong doc count", expected, writer.maxDoc());
+    assertEquals("wrong doc count", expected, writer.numDocs());
     writer.close();
 
     // make sure searching sees right # hits

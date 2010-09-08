@@ -39,6 +39,9 @@ Upgrading from Solr 1.4
   before the master.  If the master were to be updated first, the older
   searchers would not be able to read the new index format.
 
+* The Solr JavaBin format has changed as of Solr 3.1. If you are using the 
+  JavaBin format, you will need to upgrade your SolrJ client. (SOLR-2034)
+
 * The experimental ALIAS command has been removed (SOLR-1637)
 
 * Using solr.xml is recommended for single cores also (SOLR-1621)
@@ -82,6 +85,8 @@ Upgrading from Solr 1.4
   abstract methods using the new SpellingOptions class.  While this change is not
   backward compatible, it should be trivial to migrate as the SpellingOptions class
   just encapsulates the parameters that were passed in to the methods before the change. (gsingers)
+
+* readercycle script was removed. (SOLR-2046)
 
 Detailed Change List
 ----------------------
@@ -232,6 +237,24 @@ New Features
 
 * SOLR-2053: Add support for custom comparators in Solr spellchecker, per LUCENE-2479 (gsingers)
 
+* SOLR-1682: (SOLR-236, SOLR-237, SOLR-1773, SOLR-1311) Search grouping / Field collapsing.
+  (Martijn van Groningen, Emmanuel Keller, Shalin Shekhar Mangar,
+   Koji Sekiguchi, Iv�n de Prado, Ryan McKinley, Marc Sturlese, Peter Karich,
+   Bojan Smid, Charles Hornberger, Dieter Grad, Dmitry Lihachev, Doug Steigerwald,
+   Karsten Sperling, Michael Gundlach, Oleg Gnatovskiy, Thomas Traeger, yonik)
+
+* SOLR-1316: Create autosuggest component.
+  (Ankul Garg, Jason Rutherglen, Shalin Shekhar Mangar, gsingers, Robert Muir, ab)
+
+* SOLR-2059: Add "types" attribute to WordDelimiterFilterFactory, which
+  allows you to customize how WordDelimiterFilter tokenizes text with
+  a configuration file.  (Peter Karich, rmuir)
+
+* SOLR-1665: Add debug component options for timings, results and query info only (gsingers, hossman, yonik)    
+
+* SOLR-2099: Add ability to throttle rsync based replication using rsync option --bwlimit.
+  (Brandon Evans via koji)
+
 Optimizations
 ----------------------
 
@@ -259,6 +282,20 @@ Optimizations
   also big terms for multi-valued facet.method=fc.  The resulting speedup
   for the first facet request is anywhere from 30% to 32x, depending on how many
   terms are in the field and how many documents match per term.  (yonik) 
+
+* SOLR-2089: Speed up UnInvertedField faceting (facet.method=fc for
+  multi-valued fields) when facet.limit is both high, and a high enough
+  percentage of the number of unique terms in the field.  Extreme cases
+  yield speedups over 3x. (yonik)
+
+* SOLR-2046: Simplify legacy replication scripts by adding common functions
+  to scripts-util. (koji)
+
+* SOLR-2092: Speed up single-valued and multi-valued "fc" faceting. Typical
+  improvement is 5%, but can be much greater (up to 10x faster) when facet.offset
+  is very large (deep paging). (yonik)
+
+
 
 Bug Fixes
 ----------------------
@@ -412,7 +449,23 @@ Bug Fixes
 * SOLR-2036: Avoid expensive fieldCache ram estimation for the
   admin stats page. (yonik)
 
-* SOLR-2047: ReplicationHandler should accept bool type for enable flag. (koji)  
+* SOLR-2047: ReplicationHandler should accept bool type for enable flag. (koji)
+
+* SOLR-1630: Fix spell checking collation issue related to token positions (rmuir, gsingers) 
+
+* SOLR-2100: The replication handler backup command didn't save the commit
+  point and hence could fail when a newer commit caused the older commit point
+  to be removed before it was finished being copied.  This did not affect
+  normal master/slave replication.  (Peter Sturge via yonik)
+
+* SOLR-2107: MoreLikeThisHandler doesn't work with alternate qparsers. (yonik)
+
+* SOLR-2111: Change exception handling in distributed faceting to work more
+  like non-distributed faceting, change facet_counts/exception from a String
+  to a List<String> to enable listing all exceptions that happened, and
+  prevent an exception in one facet command from affecting another
+  facet command. (yonik)
+
 
 Other Changes
 ----------------------
@@ -507,6 +560,16 @@ Other Changes
 
 * SOLR-2003: SolrResourceLoader will report any encoding errors, rather than
   silently using replacement characters for invalid inputs (blargy via rmuir)
+
+* SOLR-1804: Google collections updated to Google Guava (which is a superset of collections and contains bug fixes) (gsingers)  
+
+* SOLR-2034: Switch to JavaBin codec version 2. Strings are now serialized
+  as the number of UTF-8 bytes, followed by the bytes in UTF-8. Previously
+  Strings were serialized as the number of UTF-16 chars, followed by the
+  bytes in Modified UTF-8. (hossman, yonik, rmuir)
+
+* SOLR-2013: Add mapping-FoldToASCII.txt to example conf directory.
+  (Steven Rowe via koji)
 
 Build
 ----------------------

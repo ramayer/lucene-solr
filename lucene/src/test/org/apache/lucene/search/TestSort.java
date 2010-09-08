@@ -44,7 +44,6 @@ import org.apache.lucene.queryParser.ParseException;
 import org.apache.lucene.search.BooleanClause.Occur;
 import org.apache.lucene.search.FieldValueHitQueue.Entry;
 import org.apache.lucene.store.LockObtainFailedException;
-import org.apache.lucene.store.MockRAMDirectory;
 import org.apache.lucene.store.Directory;
 import org.apache.lucene.util.DocIdBitSet;
 import org.apache.lucene.util.LuceneTestCase;
@@ -110,7 +109,7 @@ public class TestSort extends LuceneTestCase implements Serializable {
   // create an index of all the documents, or just the x, or just the y documents
   private IndexSearcher getIndex (boolean even, boolean odd)
   throws IOException {
-    MockRAMDirectory indexStore = newDirectory(random);
+    Directory indexStore = newDirectory(random);
     dirs.add(indexStore);
     RandomIndexWriter writer = new RandomIndexWriter(random, indexStore);
 
@@ -146,7 +145,7 @@ public class TestSort extends LuceneTestCase implements Serializable {
   }
   
   private IndexSearcher getFullStrings() throws CorruptIndexException, LockObtainFailedException, IOException {
-    MockRAMDirectory indexStore = newDirectory (random);
+    Directory indexStore = newDirectory (random);
     dirs.add(indexStore);
     IndexWriter writer = new IndexWriter(indexStore, new IndexWriterConfig(
         TEST_VERSION_CURRENT, new MockAnalyzer()).setMaxBufferedDocs(4));
@@ -823,6 +822,27 @@ public class TestSort extends LuceneTestCase implements Serializable {
     }
   }
   
+  // MultiComparatorScoringNoMaxScoreCollector
+  public void testSortWithScoreNoMaxScoreTrackingMulti() throws Exception {
+    
+    // Two Sort criteria to instantiate the multi/single comparators.
+    Sort[] sort = new Sort[] {new Sort(SortField.FIELD_DOC, SortField.FIELD_SCORE) };
+    for (int i = 0; i < sort.length; i++) {
+      Query q = new MatchAllDocsQuery();
+      TopDocsCollector<Entry> tdc = TopFieldCollector.create(sort[i], 10, true, true,
+          false, true);
+
+      full.search(q, tdc);
+      
+      TopDocs td = tdc.topDocs();
+      ScoreDoc[] sd = td.scoreDocs;
+      for (int j = 0; j < sd.length; j++) {
+        assertTrue(!Float.isNaN(sd[j].score));
+      }
+      assertTrue(Float.isNaN(td.getMaxScore()));
+    }
+  }
+  
   public void testSortWithScoreAndMaxScoreTracking() throws Exception {
     
     // Two Sort criteria to instantiate the multi/single comparators.
@@ -866,6 +886,55 @@ public class TestSort extends LuceneTestCase implements Serializable {
         "OutOfOrderOneComparatorScoringMaxScoreCollector", 
         "OutOfOrderOneComparatorScoringNoMaxScoreCollector", 
         "OutOfOrderOneComparatorScoringMaxScoreCollector" 
+    };
+    
+    BooleanQuery bq = new BooleanQuery();
+    // Add a Query with SHOULD, since bw.scorer() returns BooleanScorer2
+    // which delegates to BS if there are no mandatory clauses.
+    bq.add(new MatchAllDocsQuery(), Occur.SHOULD);
+    // Set minNrShouldMatch to 1 so that BQ will not optimize rewrite to return
+    // the clause instead of BQ.
+    bq.setMinimumNumberShouldMatch(1);
+    for (int i = 0; i < sort.length; i++) {
+      for (int j = 0; j < tfcOptions.length; j++) {
+        TopDocsCollector<Entry> tdc = TopFieldCollector.create(sort[i], 10,
+            tfcOptions[j][0], tfcOptions[j][1], tfcOptions[j][2], false);
+
+        assertTrue(tdc.getClass().getName().endsWith("$"+actualTFCClasses[j]));
+        
+        full.search(bq, tdc);
+        
+        TopDocs td = tdc.topDocs();
+        ScoreDoc[] sd = td.scoreDocs;
+        assertEquals(10, sd.length);
+      }
+    }
+  }
+  
+  // OutOfOrderMulti*Collector
+  public void testOutOfOrderDocsScoringSortMulti() throws Exception {
+
+    // Two Sort criteria to instantiate the multi/single comparators.
+    Sort[] sort = new Sort[] {new Sort(SortField.FIELD_DOC, SortField.FIELD_SCORE) };
+    boolean[][] tfcOptions = new boolean[][] {
+        new boolean[] { false, false, false },
+        new boolean[] { false, false, true },
+        new boolean[] { false, true, false },
+        new boolean[] { false, true, true },
+        new boolean[] { true, false, false },
+        new boolean[] { true, false, true },
+        new boolean[] { true, true, false },
+        new boolean[] { true, true, true },
+    };
+    String[] actualTFCClasses = new String[] {
+        "OutOfOrderMultiComparatorNonScoringCollector", 
+        "OutOfOrderMultiComparatorScoringMaxScoreCollector", 
+        "OutOfOrderMultiComparatorScoringNoMaxScoreCollector", 
+        "OutOfOrderMultiComparatorScoringMaxScoreCollector", 
+        "OutOfOrderMultiComparatorNonScoringCollector", 
+        "OutOfOrderMultiComparatorScoringMaxScoreCollector", 
+        "OutOfOrderMultiComparatorScoringNoMaxScoreCollector", 
+        "OutOfOrderMultiComparatorScoringMaxScoreCollector" 
     };
     
     BooleanQuery bq = new BooleanQuery();
@@ -1057,7 +1126,7 @@ public class TestSort extends LuceneTestCase implements Serializable {
   }
 
   public void testLUCENE2142() throws IOException {
-    MockRAMDirectory indexStore = newDirectory (random);
+    Directory indexStore = newDirectory (random);
     IndexWriter writer = new IndexWriter(indexStore, newIndexWriterConfig(random,
         TEST_VERSION_CURRENT, new MockAnalyzer()));
     for (int i=0; i<5; i++) {

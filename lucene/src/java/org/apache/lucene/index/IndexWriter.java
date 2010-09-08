@@ -32,6 +32,7 @@ import org.apache.lucene.util.Constants;
 import org.apache.lucene.index.codecs.CodecProvider;
 import org.apache.lucene.util.ThreadInterruptedException;
 import org.apache.lucene.util.Version;
+import org.apache.lucene.util.Bits;
 
 import java.io.IOException;
 import java.io.Closeable;
@@ -418,7 +419,7 @@ public class IndexWriter implements Closeable {
     // just like we do when loading segments_N
     synchronized(this) {
       applyDeletes();
-      final IndexReader r = new ReadOnlyDirectoryReader(this, segmentInfos, termInfosIndexDivisor, codecs);
+      final IndexReader r = new DirectoryReader(this, segmentInfos, termInfosIndexDivisor, codecs);
       if (infoStream != null) {
         message("return reader version=" + r.getVersion() + " reader=" + r);
       }
@@ -1554,7 +1555,6 @@ public class IndexWriter implements Closeable {
 
   private void messageState() {
     message("\ndir=" + directory + "\n" +
-            "mergePolicy=" + mergePolicy + "\n" + 
             "index=" + segString() + "\n" +
             "version=" + Constants.LUCENE_VERSION + "\n" +
             config.toString());
@@ -2869,7 +2869,7 @@ public class IndexWriter implements Closeable {
     try {
       if (infoStream != null)
         message("flush at addIndexes(Directory...)");
-      flush(true, false, true);
+      flush(false, false, true);
 
       int docCount = 0;
       List<SegmentInfo> infos = new ArrayList<SegmentInfo>();
@@ -3004,9 +3004,9 @@ public class IndexWriter implements Closeable {
             merger.createCompoundFile(mergedName + ".cfs", info);
             synchronized(this) {
               info.setUseCompoundFile(true);
+              checkpoint();
             }
           } finally {
-            checkpoint();
             deleter.decRef(files);
           }
         }
@@ -3464,7 +3464,9 @@ public class IndexWriter implements Closeable {
       SegmentInfo info = sourceSegments.info(i);
       int docCount = info.docCount;
       SegmentReader previousReader = merge.readersClone[i];
+      final Bits prevDelDocs = previousReader.getDeletedDocs();
       SegmentReader currentReader = merge.readers[i];
+      final Bits currentDelDocs = currentReader.getDeletedDocs();
       if (previousReader.hasDeletions()) {
 
         // There were deletes on this segment when the merge
@@ -3479,10 +3481,10 @@ public class IndexWriter implements Closeable {
           // committed since we started the merge, so we
           // must merge them:
           for(int j=0;j<docCount;j++) {
-            if (previousReader.isDeleted(j))
-              assert currentReader.isDeleted(j);
+            if (prevDelDocs.get(j))
+              assert currentDelDocs.get(j);
             else {
-              if (currentReader.isDeleted(j)) {
+              if (currentDelDocs.get(j)) {
                 mergeReader.doDelete(docUpto);
                 delCount++;
               }
@@ -3496,7 +3498,7 @@ public class IndexWriter implements Closeable {
         // This segment had no deletes before but now it
         // does:
         for(int j=0; j<docCount; j++) {
-          if (currentReader.isDeleted(j)) {
+          if (currentDelDocs.get(j)) {
             mergeReader.doDelete(docUpto);
             delCount++;
           }
@@ -4539,6 +4541,10 @@ public class IndexWriter implements Closeable {
     if (!infos.equals(segmentInfos)) {
       // if any structural changes (new segments), we are
       // stale
+      return false;
+    } else if (infos.getGeneration() != segmentInfos.getGeneration()) {
+      // if any commit took place since we were opened, we
+      // are stale
       return false;
     } else {
       return !docWriter.anyChanges();

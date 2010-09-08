@@ -28,10 +28,10 @@ import org.apache.lucene.util.BytesRef;
 import org.apache.lucene.document.Document;
 import org.apache.lucene.document.Fieldable;
 import org.apache.lucene.search.Similarity;
-import org.apache.lucene.store.MockRAMDirectory;
+import org.apache.lucene.store.Directory;
 
 public class TestSegmentReader extends LuceneTestCase {
-  private MockRAMDirectory dir;
+  private Directory dir;
   private Document testDoc = new Document();
   private SegmentReader reader = null;
 
@@ -86,7 +86,7 @@ public class TestSegmentReader extends LuceneTestCase {
     assertTrue(deleteReader != null);
     assertTrue(deleteReader.numDocs() == 1);
     deleteReader.deleteDocument(0);
-    assertTrue(deleteReader.isDeleted(0) == true);
+    assertTrue(deleteReader.getDeletedDocs().get(0));
     assertTrue(deleteReader.hasDeletions() == true);
     assertTrue(deleteReader.numDocs() == 0);
     deleteReader.close();

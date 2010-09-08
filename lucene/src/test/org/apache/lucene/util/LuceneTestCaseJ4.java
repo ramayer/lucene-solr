@@ -23,21 +23,21 @@ import org.apache.lucene.index.IndexWriterConfig;
 import org.apache.lucene.index.LogDocMergePolicy;
 import org.apache.lucene.index.LogMergePolicy;
 import org.apache.lucene.index.SerialMergeScheduler;
+import org.apache.lucene.index.codecs.Codec;
+import org.apache.lucene.index.codecs.CodecProvider;
+import org.apache.lucene.index.codecs.mockintblock.MockFixedIntBlockCodec;
+import org.apache.lucene.index.codecs.mockintblock.MockVariableIntBlockCodec;
+import org.apache.lucene.index.codecs.mocksep.MockSepCodec;
+import org.apache.lucene.index.codecs.preflex.PreFlexCodec;
+import org.apache.lucene.index.codecs.preflexrw.PreFlexRWCodec;
+import org.apache.lucene.index.codecs.pulsing.PulsingCodec;
 import org.apache.lucene.search.BooleanQuery;
 import org.apache.lucene.search.FieldCache;
 import org.apache.lucene.search.FieldCache.CacheEntry;
 import org.apache.lucene.store.Directory;
-import org.apache.lucene.store.MockRAMDirectory;
+import org.apache.lucene.store.MMapDirectory;
+import org.apache.lucene.store.MockDirectoryWrapper;
 import org.apache.lucene.util.FieldCacheSanityChecker.Insanity;
-import org.apache.lucene.index.codecs.CodecProvider;
-import org.apache.lucene.index.codecs.Codec;
-import org.apache.lucene.index.codecs.preflexrw.PreFlexRWCodec;
-import org.apache.lucene.index.codecs.preflex.PreFlexCodec;
-import org.apache.lucene.index.codecs.pulsing.PulsingCodec;
-import org.apache.lucene.index.codecs.mocksep.MockSepCodec;
-import org.apache.lucene.index.codecs.mockintblock.MockFixedIntBlockCodec;
-import org.apache.lucene.index.codecs.mockintblock.MockVariableIntBlockCodec;
-
 import org.junit.After;
 import org.junit.AfterClass;
 import org.junit.Assert;
@@ -50,27 +50,29 @@ import org.junit.runner.Description;
 import org.junit.runner.RunWith;
 import org.junit.runner.manipulation.Filter;
 import org.junit.runner.manipulation.NoTestsRemainException;
+import org.junit.runner.notification.RunNotifier;
 import org.junit.runners.BlockJUnit4ClassRunner;
 import org.junit.runners.model.FrameworkMethod;
 import org.junit.runners.model.InitializationError;
 
 import java.io.File;
-import java.io.PrintStream;
 import java.io.IOException;
+import java.io.PrintStream;
+import java.lang.reflect.Constructor;
+import java.lang.reflect.Method;
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.IdentityHashMap;
 import java.util.Iterator;
-import java.util.Locale;
-import java.util.Random;
-import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
+import java.util.Random;
 import java.util.TimeZone;
 import java.util.WeakHashMap;
-import java.util.Collections;
-import java.util.regex.Pattern;
 import java.util.regex.Matcher;
-import java.lang.reflect.Method;
+import java.util.regex.Pattern;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.fail;
@@ -111,7 +113,7 @@ import static org.junit.Assert.fail;
 // get from that override is provided by InterceptTestCaseEvents
 //@RunWith(RunBareWrapper.class)
 @RunWith(LuceneTestCaseJ4.LuceneTestCaseRunner.class)
-public class LuceneTestCaseJ4 {
+public abstract class LuceneTestCaseJ4 {
 
   /**
    * true iff tests are run in verbose mode. Note: if it is false, tests are not
@@ -138,6 +140,7 @@ public class LuceneTestCaseJ4 {
     if (s == null)
       throw new RuntimeException("To run tests, you need to define system property 'tempDir' or 'java.io.tmpdir'.");
     TEMP_DIR = new File(s);
+    TEMP_DIR.mkdirs();
   }
 
   // by default we randomly pick a different codec for
@@ -149,6 +152,10 @@ public class LuceneTestCaseJ4 {
   static final String TEST_LOCALE = System.getProperty("tests.locale", "random");
   /** Gets the timezone to run tests with */
   static final String TEST_TIMEZONE = System.getProperty("tests.timezone", "random");
+  /** Gets the directory to run tests with */
+  static final String TEST_DIRECTORY = System.getProperty("tests.directory", "random");
+  /** Get the number of times to run tests */
+  static final int TEST_ITER = Integer.parseInt(System.getProperty("tests.iter", "1"));
   
   private static final Pattern codecWithParam = Pattern.compile("(.*)\\(\\s*(\\d+)\\s*\\)");
 
@@ -156,7 +163,7 @@ public class LuceneTestCaseJ4 {
    * A random multiplier which you should use when writing random tests:
    * multiply it by the number of iterations
    */
-  public static final int RANDOM_MULTIPLIER = Integer.parseInt(System.getProperty("random.multiplier", "1"));
+  public static final int RANDOM_MULTIPLIER = Integer.parseInt(System.getProperty("tests.multiplier", "1"));
   
   private int savedBoolMaxClauseCount;
 
@@ -190,7 +197,7 @@ public class LuceneTestCaseJ4 {
   private static TimeZone timeZone;
   private static TimeZone savedTimeZone;
   
-  private static Map<MockRAMDirectory,StackTraceElement[]> stores;
+  private static Map<MockDirectoryWrapper,StackTraceElement[]> stores;
   
   private static final String[] TEST_CODECS = new String[] {"MockSep", "MockFixedIntBlock", "MockVariableIntBlock"};
 
@@ -279,7 +286,7 @@ public class LuceneTestCaseJ4 {
 
   @BeforeClass
   public static void beforeClassLuceneTestCaseJ4() {
-    stores = Collections.synchronizedMap(new IdentityHashMap<MockRAMDirectory,StackTraceElement[]>());
+    stores = Collections.synchronizedMap(new IdentityHashMap<MockDirectoryWrapper,StackTraceElement[]>());
     codec = installTestCodecs();
     savedLocale = Locale.getDefault();
     locale = TEST_LOCALE.equals("random") ? randomLocale(seedRnd) : localeForName(TEST_LOCALE);
@@ -294,8 +301,10 @@ public class LuceneTestCaseJ4 {
     removeTestCodecs(codec);
     Locale.setDefault(savedLocale);
     TimeZone.setDefault(savedTimeZone);
+    System.clearProperty("solr.solr.home");
+    System.clearProperty("solr.data.dir");
     // now look for unclosed resources
-    for (MockRAMDirectory d : stores.keySet()) {
+    for (MockDirectoryWrapper d : stores.keySet()) {
       if (d.isOpen()) {
         StackTraceElement elements[] = stores.get(d);
         StackTraceElement element = (elements.length > 1) ? elements[1] : null;
@@ -582,16 +591,36 @@ public class LuceneTestCaseJ4 {
     return c;
   }
 
-  public static MockRAMDirectory newDirectory(Random r) throws IOException {
+  /**
+   * Returns a new Dictionary instance. Use this when the test does not
+   * care about the specific Directory implementation (most tests).
+   * <p>
+   * The Directory is wrapped with {@link MockDirectoryWrapper}.
+   * By default this means it will be picky, such as ensuring that you
+   * properly close it and all open files in your test. It will emulate
+   * some features of Windows, such as not allowing open files to be
+   * overwritten.
+   */
+  public static MockDirectoryWrapper newDirectory(Random r) throws IOException {
     StackTraceElement[] stack = new Exception().getStackTrace();
-    MockRAMDirectory dir = new MockRAMDirectory();
+    Directory impl = newDirectoryImpl(r, TEST_DIRECTORY);
+    MockDirectoryWrapper dir = new MockDirectoryWrapper(impl);
     stores.put(dir, stack);
     return dir;
   }
   
-  public static MockRAMDirectory newDirectory(Random r, Directory d) throws IOException {
+  /**
+   * Returns a new Dictionary instance, with contents copied from the
+   * provided directory. See {@link #newDirectory(Random)} for more
+   * information.
+   */
+  public static MockDirectoryWrapper newDirectory(Random r, Directory d) throws IOException {
     StackTraceElement[] stack = new Exception().getStackTrace();
-    MockRAMDirectory dir = new MockRAMDirectory(d);
+    Directory impl = newDirectoryImpl(r, TEST_DIRECTORY);
+    for (String file : d.listAll()) {
+     d.copy(impl, file, file);
+    }
+    MockDirectoryWrapper dir = new MockDirectoryWrapper(impl);
     stores.put(dir, stack);
     return dir;
   }
@@ -619,6 +648,53 @@ public class LuceneTestCaseJ4 {
     }
   }
 
+  private static String CORE_DIRECTORIES[] = {
+    "RAMDirectory",
+    "SimpleFSDirectory",
+    "NIOFSDirectory",
+    "MMapDirectory"
+  };
+  
+  public static String randomDirectory(Random random) {
+    if (random.nextInt(10) == 0) {
+      return CORE_DIRECTORIES[random.nextInt(CORE_DIRECTORIES.length)];
+    } else {
+      return "RAMDirectory";
+    }
+  }
+  
+  static Directory newDirectoryImpl(Random random, String clazzName) {
+    if (clazzName.equals("random"))
+      clazzName = randomDirectory(random);
+    if (clazzName.indexOf(".") == -1) // if not fully qualified, assume .store
+      clazzName = "org.apache.lucene.store." + clazzName;
+    try {
+      final Class<? extends Directory> clazz = Class.forName(clazzName).asSubclass(Directory.class);
+      try {
+        // try empty ctor
+        return clazz.newInstance();
+      } catch (Exception e) {
+        final File tmpFile = File.createTempFile("test", "tmp", TEMP_DIR);
+        tmpFile.delete();
+        tmpFile.mkdir();
+        try {
+          Constructor<? extends Directory> ctor = clazz.getConstructor(File.class);
+          Directory d = ctor.newInstance(tmpFile);
+          // try not to enable this hack unless we must.
+          if (d instanceof MMapDirectory && Constants.WINDOWS && MMapDirectory.UNMAP_SUPPORTED)
+            ((MMapDirectory)d).setUseUnmap(true);
+          return d;
+        } catch (Exception e2) {
+          // try .open(File)
+          Method method = clazz.getMethod("open", new Class[] { File.class });
+          return (Directory) method.invoke(null, tmpFile);
+        }
+      }
+    } catch (Exception e) {
+      throw new RuntimeException(e);
+    } 
+  }
+  
   public String getName() {
     return this.name;
   }
@@ -662,6 +738,13 @@ public class LuceneTestCaseJ4 {
   
   /** optionally filters the tests to be run by TEST_METHOD */
   public static class LuceneTestCaseRunner extends BlockJUnit4ClassRunner {
+
+    @Override
+    protected void runChild(FrameworkMethod arg0, RunNotifier arg1) {
+      for (int i = 0; i < TEST_ITER; i++)
+        super.runChild(arg0, arg1);
+    }
+
     public LuceneTestCaseRunner(Class<?> clazz) throws InitializationError {
       super(clazz);
       Filter f = new Filter() {

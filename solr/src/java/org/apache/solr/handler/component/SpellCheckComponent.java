@@ -111,7 +111,7 @@ public class SpellCheckComponent extends SearchComponent implements SolrCoreAwar
       spellChecker.build(rb.req.getCore(), rb.req.getSearcher());
       rb.rsp.add("command", "build");
     } else if (params.getBool(SPELLCHECK_RELOAD, false)) {
-      spellChecker.reload();
+      spellChecker.reload(rb.req.getCore(), rb.req.getSearcher());
       rb.rsp.add("command", "reload");
     }
   }
@@ -450,6 +450,8 @@ public class SpellCheckComponent extends SearchComponent implements SolrCoreAwar
       for (Iterator<Map.Entry<Token, String>> bestIter = best.entrySet().iterator(); bestIter.hasNext();) {
         Map.Entry<Token, String> entry = bestIter.next();
         Token tok = entry.getKey();
+        // we are replacing the query in order, but injected terms might cause illegal offsets due to previous replacements.
+        if (tok.getPositionIncrement() == 0) continue;
         collation.replace(tok.startOffset() + offset, 
           tok.endOffset() + offset, entry.getValue());
         offset += entry.getValue().length() - (tok.endOffset() - tok.startOffset());
@@ -553,7 +555,7 @@ public class SpellCheckComponent extends SearchComponent implements SolrCoreAwar
         try {
           LOG.info("Loading spell index for spellchecker: "
                   + checker.getDictionaryName());
-          checker.reload();
+          checker.reload(core, newSearcher);
         } catch (IOException e) {
           log.error( "Exception in reloading spell check index for spellchecker: " + checker.getDictionaryName(), e);
         }

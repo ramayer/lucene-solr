@@ -34,8 +34,9 @@ import org.apache.lucene.search.IndexSearcher;
 import org.apache.lucene.search.Query;
 import org.apache.lucene.search.TopDocs;
 import org.apache.lucene.store.Directory;
-import org.apache.lucene.store.MockRAMDirectory;
+import org.apache.lucene.store.MockDirectoryWrapper;
 import org.apache.lucene.store.AlreadyClosedException;
+import org.apache.lucene.store.RAMDirectory;
 import org.apache.lucene.util.LuceneTestCase;
 import org.apache.lucene.util._TestUtil;
 import org.apache.lucene.util.BytesRef;
@@ -155,7 +156,7 @@ public class TestIndexWriterReader extends LuceneTestCase {
     assertTrue(r1.isCurrent());
 
     writer.commit();
-    assertTrue(r1.isCurrent());
+    assertFalse(r1.isCurrent());
 
     assertEquals(200, r1.maxDoc());
 
@@ -355,7 +356,7 @@ public class TestIndexWriterReader extends LuceneTestCase {
             try {
               final Directory[] dirs = new Directory[numDirs];
               for (int k = 0; k < numDirs; k++)
-                dirs[k] = new MockRAMDirectory(addDir);
+                dirs[k] = new MockDirectoryWrapper(new RAMDirectory(addDir));
               //int j = 0;
               //while (true) {
                 // System.out.println(Thread.currentThread().getName() + ": iter
@@ -631,7 +632,7 @@ public class TestIndexWriterReader extends LuceneTestCase {
 
     final Directory[] dirs = new Directory[10];
     for (int i=0;i<10;i++) {
-      dirs[i] = new MockRAMDirectory(dir1);
+      dirs[i] = new MockDirectoryWrapper(new RAMDirectory(dir1));
     }
 
     IndexReader r = writer.getReader();
@@ -650,6 +651,7 @@ public class TestIndexWriterReader extends LuceneTestCase {
             do {
               try {
                 writer.addIndexes(dirs);
+                writer.maybeMerge();
               } catch (Throwable t) {
                 excs.add(t);
                 throw new RuntimeException(t);
@@ -723,12 +725,12 @@ public class TestIndexWriterReader extends LuceneTestCase {
             final Random r = new Random();
             do {
               try {
-                for(int i=0;i<10;i++) {
-                  writer.addDocument(createDocument(10*count+i, "test", 4));
+                for(int docUpto=0;docUpto<10;docUpto++) {
+                  writer.addDocument(createDocument(10*count+docUpto, "test", 4));
                 }
                 count++;
                 final int limit = count*10;
-                for(int i=0;i<5;i++) {
+                for(int delUpto=0;delUpto<5;delUpto++) {
                   int x = r.nextInt(limit);
                   writer.deleteDocuments(new Term("field3", "b"+x));
                 }

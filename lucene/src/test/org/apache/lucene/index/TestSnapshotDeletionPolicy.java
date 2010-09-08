@@ -13,7 +13,6 @@ import org.apache.lucene.document.Field;
 import org.apache.lucene.store.Directory;
 import org.apache.lucene.store.FSDirectory;
 import org.apache.lucene.store.IndexInput;
-import org.apache.lucene.store.MockRAMDirectory;
 import org.apache.lucene.analysis.MockAnalyzer;
 import org.apache.lucene.index.IndexCommit;
 import org.apache.lucene.index.IndexWriterConfig;
@@ -102,7 +101,7 @@ public class TestSnapshotDeletionPolicy extends LuceneTestCaseJ4 {
       _TestUtil.rmDir(dir);
     }
 
-    MockRAMDirectory dir2 = newDirectory(random);
+    Directory dir2 = newDirectory(random);
     runTest(random, dir2);
     dir2.close();
   }
@@ -327,6 +326,7 @@ public class TestSnapshotDeletionPolicy extends LuceneTestCaseJ4 {
     writer.commit();
     writer.deleteUnusedFiles();
     assertSnapshotExists(dir, sdp, numSnapshots - 1);
+    writer.close();
     
     // but 'snapshot1' files will still exist (need to release snapshot before they can be deleted).
     String segFileName = sdp.getSnapshot("snapshot1").getSegmentsFileName();
@@ -358,6 +358,7 @@ public class TestSnapshotDeletionPolicy extends LuceneTestCaseJ4 {
     }
     assertNull(sdp.getSnapshots().get(snapId));
     writer.deleteUnusedFiles();
+    writer.close();
     assertFalse("segments file should not be found in dirctory: " + segFileName, dir.fileExists(segFileName));
     dir.close();
   }

@@ -64,9 +64,8 @@ import java.util.concurrent.atomic.AtomicInteger;
 
  <b>NOTE</b>: as of 2.4, it's possible to open a read-only
  IndexReader using the static open methods that accept the 
- boolean readOnly parameter.  Such a reader has better 
- concurrency as it's not necessary to synchronize on the 
- isDeleted method.  You must specify false if you want to 
+ boolean readOnly parameter.  Such a reader may have better 
+ concurrency.  You must specify false if you want to 
  make changes with the resulting IndexReader.
  </p>
 
@@ -744,8 +743,8 @@ public abstract class IndexReader implements Cloneable,Closeable {
    * <b>NOTE:</b> for performance reasons, this method does not check if the
    * requested document is deleted, and therefore asking for a deleted document
    * may yield unspecified results. Usually this is not required, however you
-   * can call {@link #isDeleted(int)} with the requested document ID to verify
-   * the document is not deleted.
+   * can test if the doc is deleted by checking the {@link
+   * Bits} returned from {@link MultiFields#getDeletedDocs}.
    * 
    * @throws CorruptIndexException if the index is corrupt
    * @throws IOException if there is a low-level IO error
@@ -769,8 +768,8 @@ public abstract class IndexReader implements Cloneable,Closeable {
    * <b>NOTE:</b> for performance reasons, this method does not check if the
    * requested document is deleted, and therefore asking for a deleted document
    * may yield unspecified results. Usually this is not required, however you
-   * can call {@link #isDeleted(int)} with the requested document ID to verify
-   * the document is not deleted.
+   * can test if the doc is deleted by checking the {@link
+   * Bits} returned from {@link MultiFields#getDeletedDocs}.
    * 
    * @param n Get the document at the <code>n</code><sup>th</sup> position
    * @param fieldSelector The {@link FieldSelector} to use to determine what
@@ -788,9 +787,6 @@ public abstract class IndexReader implements Cloneable,Closeable {
   // TODO (1.5): When we convert to JDK 1.5 make this Set<String>
   public abstract Document document(int n, FieldSelector fieldSelector) throws CorruptIndexException, IOException;
   
-  /** Returns true if document <i>n</i> has been deleted */
-  public abstract boolean isDeleted(int n);
-
   /** Returns true if any documents have been deleted */
   public abstract boolean hasDeletions();
 
@@ -1120,7 +1116,7 @@ public abstract class IndexReader implements Cloneable,Closeable {
    *  docs.
    *
    * @lucene.experimental */
-  public abstract Bits getDeletedDocs() throws IOException;
+  public abstract Bits getDeletedDocs();
 
   /**
    * Expert: return the IndexCommit that this reader has
@@ -1303,17 +1299,5 @@ public abstract class IndexReader implements Cloneable,Closeable {
   /** @lucene.internal */
   Fields retrieveFields() {
     return fields;
-  }
-
-  private Bits storedDelDocs;
-
-  /** @lucene.internal */
-  void storeDelDocs(Bits delDocs) {
-    this.storedDelDocs = delDocs;
-  }
-
-  /** @lucene.internal */
-  Bits retrieveDelDocs() {
-    return storedDelDocs;
   }
 }

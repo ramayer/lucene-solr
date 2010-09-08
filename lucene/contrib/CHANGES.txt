@@ -9,6 +9,9 @@ Build
 
 New Features
 
+  * LUCENE-2604: Added RegexpQuery support to contrib/queryparser.
+    (Simon Willnauer, Robert Muir)
+
   * LUCENE-2500: Added DirectIOLinuxDirectory, a Linux-specific
     Directory impl that uses the O_DIRECT flag to bypass the buffer
     cache.  This is useful to prevent segment merging from evicting
@@ -32,6 +35,7 @@ API Changes
     safety, serialization, and performance problems. If you have
     written a custom RegexCapabilities it will need to be updated
     to the new API.  (Robert Muir, Uwe Schindler)
+
 ======================= Lucene 3.x (not yet released) =======================
 
 Changes in backwards compatibility policy
@@ -109,6 +113,15 @@ Bug fixes
 
 * LUCENE-2524: FastVectorHighlighter: use mod for getting colored tag.
   (Koji Sekiguchi)
+
+* LUCENE-2615: Fix DirectIOLinuxDirectory to not assign bogus
+  permissions to newly created files, and to not silently hardwire
+  buffer size to 1 MB.  (Mark Miller, Robert Muir, Mike McCandless)
+
+* LUCENE-2629: Fix gennorm2 task for generating ICUFoldingFilter's .nrm file. This allows
+  you to customize its normalization/folding, by editing the source data files in src/data
+  and regenerating a new .nrm with 'ant gennorm2'.  (David Bowen via Robert Muir)
+
    
 API Changes
 
@@ -128,6 +141,9 @@ API Changes
  * LUCENE-2603: Add setMultiValuedSeparator(char) method to set an arbitrary
    char that is used when concatenating multiValued data. Default is a space
    (' '). It is applied on ANALYZED field only. (Koji Sekiguchi)
+
+ * LUCENE-2626: FastVectorHighlighter: enable FragListBuilder and FragmentsBuilder
+   to be set per-field override. (Koji Sekiguchi)
    
 New features
 
@@ -211,6 +227,9 @@ New features
 
  * LUCENE-2581: FastVectorHighlighter: add Encoder to FragmentsBuilder.
    (Koji Sekiguchi)
+
+ * LUCENE-2624: Add Analyzers for Armenian, Basque, and Catalan, from snowball.
+   (Robert Muir)
 
 Build
 

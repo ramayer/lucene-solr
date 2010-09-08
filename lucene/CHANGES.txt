@@ -105,6 +105,9 @@ Changes in backwards compatibility policy
   calling setCalibrateSizeByDeletes(false) on the merge policy.  (Mike
   McCandless)
 
+* LUCENE-2600: Remove IndexReader.isDeleted in favor of
+  IndexReader.getDeletedDocs().  (Mike McCandless)
+
 API Changes
 
 * LUCENE-2302, LUCENE-1458, LUCENE-2111, LUCENE-2514: Terms are no longer
@@ -127,6 +130,10 @@ API Changes
   next commit). (Shai Erera)
 
 New features
+
+* LUCENE-2604: Added RegexpQuery support to QueryParser. Regular expressions
+  are directly supported by the standard queryparser.
+  (Simon Willnauer, Robert Muir)
 
 * LUCENE-1606, LUCENE-2089: Adds AutomatonQuery, a MultiTermQuery that 
   matches terms against a finite-state machine. Implement WildcardQuery
@@ -201,6 +208,11 @@ New features
 * LUCENE-2559: Added SegmentReader.reopen methods (John Wang via Mike
   McCandless)
 
+* LUCENE-2590: Added Scorer.visitSubScorers, and Scorer.freq.  Along
+  with a custom Collector these experimental methods make it possible
+  to gather the hit-count per sub-clause and per document while a
+  search is running.  (Simon Willnauer, Mike McCandless)
+
 Optimizations
 
 * LUCENE-2410: ~20% speedup on exact (slop=0) PhraseQuery matching.
@@ -223,6 +235,10 @@ Documentation
 
 * LUCENE-2579: Fix oal.search's package.html description of abstract
   methods.  (Santiago M. Mola via Mike McCandless)
+  
+* LUCENE-2239: Documented limitations in NIOFSDirectory and MMapDirectory due to
+  Java NOI behavior when a Thread is interrupted while blocking on IO.
+  (Simon Willnauer, Robert Muir)
 
 ======================= Lucene 3.x (not yet released) =======================
 
@@ -478,6 +494,22 @@ Bug fixes
 * LUCENE-2593: Fixed certain rare cases where a disk full could lead
   to a corrupted index (Robert Muir, Mike McCandless)
 
+* LUCENE-2617: Optional clauses of a BooleanQuery were not factored
+  into coord if the scorer for that segment returned null.  This
+  can cause the same document to score to differently depending on
+  what segment it resides in. (yonik)
+
+* LUCENE-2616: FastVectorHighlighter: out of alignment when the first value is
+  empty in multiValued field (Koji Sekiguchi)
+
+* LUCENE-2627: Fixed bug in MMapDirectory chunking when a file is an
+  exact multiple of the chunk size.  (Robert Muir)
+
+* LUCENE-2272: Fix explain in PayloadNearQuery and also fix scoring issue (Peter Keegan via Grant Ingersoll)  
+
+* LUCENE-2634: isCurrent on an NRT reader was failing to return false
+  if the writer had just committed (Nikolay Zamosenchuk via Mike McCandless)
+
 New features
 
 * LUCENE-2128: Parallelized fetching document frequencies during weight
@@ -632,6 +664,9 @@ Optimizations
   (getStrings, getStringIndex), consume quite a bit less RAM in most
   cases.  (Mike McCandless)
 
+* LUCENE-2098: Improve the performance of BaseCharFilter, especially for
+  large documents.  (Robin Wojciki, Koji Sekiguchi, Robert Muir)
+
 Build
 
 * LUCENE-2124: Moved the JDK-based collation support from contrib/collation 
@@ -689,8 +724,9 @@ Test Cases
   access to "real" files from the test folder itsself, can use
   LuceneTestCase(J4).getDataFile().  (Uwe Schindler)
 
-* LUCENE-2398: Improve tests to work better from IDEs such as Eclipse.
-  (Paolo Castagna via Robert Muir)
+* LUCENE-2398, LUCENE-2611: Improve tests to work better from IDEs such 
+  as Eclipse and IntelliJ.
+  (Paolo Castagna, Steven Rowe via Robert Muir)
 
 ================== Release 2.9.3 / 3.0.2 2010-06-18 ====================
 

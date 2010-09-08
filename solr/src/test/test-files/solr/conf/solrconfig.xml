@@ -333,7 +333,8 @@
   </requestHandler>
 
   <searchComponent name="spellcheck" class="org.apache.solr.handler.component.SpellCheckComponent">
-    <str name="queryAnalyzerFieldType">lowerfilt</str>
+    <!-- This is slightly different from the field value so we can test dealing with token offset changes -->
+    <str name="queryAnalyzerFieldType">lowerpunctfilt</str>
 
     <lst name="spellchecker">
       <str name="name">default</str>
@@ -422,6 +423,10 @@
       <str>tvComponent</str>
     </arr>
   </requestHandler>
+
+  <requestHandler name="/mlt" class="solr.MoreLikeThisHandler">
+  </requestHandler>
+
   <searchComponent class="solr.HighlightComponent" name="highlight">
   <highlighting>
    <!-- Configure the standard fragmenter -->

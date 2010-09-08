@@ -43,7 +43,6 @@ import org.apache.lucene.document.DateTools;
 import org.apache.lucene.document.Document;
 import org.apache.lucene.document.Field;
 import org.apache.lucene.index.IndexWriter;
-import org.apache.lucene.index.IndexWriterConfig;
 import org.apache.lucene.index.Term;
 import org.apache.lucene.index.IndexReader;
 import org.apache.lucene.search.BooleanQuery;
@@ -55,13 +54,13 @@ import org.apache.lucene.search.MatchAllDocsQuery;
 import org.apache.lucene.search.PhraseQuery;
 import org.apache.lucene.search.PrefixQuery;
 import org.apache.lucene.search.Query;
+import org.apache.lucene.search.RegexpQuery;
 import org.apache.lucene.search.TermRangeQuery;
 import org.apache.lucene.search.ScoreDoc;
 import org.apache.lucene.search.TermQuery;
 import org.apache.lucene.search.WildcardQuery;
-import org.apache.lucene.store.MockRAMDirectory;
+import org.apache.lucene.search.BooleanClause.Occur;
 import org.apache.lucene.store.Directory;
-import org.apache.lucene.store.MockRAMDirectory;
 import org.apache.lucene.util.LocalizedTestCase;
 import org.apache.lucene.util.automaton.BasicAutomata;
 import org.apache.lucene.util.automaton.CharacterRunAutomaton;
@@ -571,7 +570,7 @@ public class TestQueryParser extends LocalizedTestCase {
     
   public void testFarsiRangeCollating() throws Exception {
     Random random = newRandom();
-    MockRAMDirectory ramDir = newDirectory(random);
+    Directory ramDir = newDirectory(random);
     IndexWriter iw = new IndexWriter(ramDir, newIndexWriterConfig(random, TEST_VERSION_CURRENT, new MockAnalyzer(MockTokenizer.WHITESPACE, false)));
     Document doc = new Document();
     doc.add(new Field("content","\u0633\u0627\u0628", 
@@ -981,7 +980,7 @@ public class TestQueryParser extends LocalizedTestCase {
 
   public void testLocalDateFormat() throws IOException, ParseException {
     Random random = newRandom();
-    MockRAMDirectory ramDir = newDirectory(random);
+    Directory ramDir = newDirectory(random);
     IndexWriter iw = new IndexWriter(ramDir, newIndexWriterConfig(random, TEST_VERSION_CURRENT, new MockAnalyzer(MockTokenizer.WHITESPACE, false)));
     addDateDoc("a", 2005, 12, 2, 10, 15, 33, iw);
     addDateDoc("b", 2005, 12, 4, 22, 15, 00, iw);
@@ -1057,6 +1056,33 @@ public class TestQueryParser extends LocalizedTestCase {
 
   }
 
+  public void testRegexps() throws Exception {
+    QueryParser qp = new QueryParser(TEST_VERSION_CURRENT, "field", new MockAnalyzer(MockTokenizer.WHITESPACE, false));
+    RegexpQuery q = new RegexpQuery(new Term("field", "[a-z][123]"));
+    assertEquals(q, qp.parse("/[a-z][123]/"));
+    qp.setLowercaseExpandedTerms(true);
+    assertEquals(q, qp.parse("/[A-Z][123]/"));
+    q.setBoost(0.5f);
+    assertEquals(q, qp.parse("/[A-Z][123]/^0.5"));
+    qp.setMultiTermRewriteMethod(MultiTermQuery.SCORING_BOOLEAN_QUERY_REWRITE);
+    q.setRewriteMethod(MultiTermQuery.SCORING_BOOLEAN_QUERY_REWRITE);
+    assertTrue(qp.parse("/[A-Z][123]/^0.5") instanceof RegexpQuery);
+    assertEquals(MultiTermQuery.SCORING_BOOLEAN_QUERY_REWRITE, ((RegexpQuery)qp.parse("/[A-Z][123]/^0.5")).getRewriteMethod());
+    assertEquals(q, qp.parse("/[A-Z][123]/^0.5"));
+    qp.setMultiTermRewriteMethod(MultiTermQuery.CONSTANT_SCORE_AUTO_REWRITE_DEFAULT);
+    
+    Query escaped = new RegexpQuery(new Term("field", "[a-z]\\/[123]"));
+    assertEquals(escaped, qp.parse("/[a-z]\\/[123]/"));
+    Query escaped2 = new RegexpQuery(new Term("field", "[a-z]\\*[123]"));
+    assertEquals(escaped2, qp.parse("/[a-z]\\*[123]/"));
+    
+    BooleanQuery complex = new BooleanQuery();
+    complex.add(new RegexpQuery(new Term("field", "[a-z]\\/[123]")), Occur.MUST);
+    complex.add(new TermQuery(new Term("path", "/etc/init.d/")), Occur.MUST);
+    complex.add(new TermQuery(new Term("field", "/etc/init[.]d/lucene/")), Occur.SHOULD);
+    assertEquals(complex, qp.parse("/[a-z]\\/[123]/ AND path:/etc/init.d/ OR /etc\\/init\\[.\\]d/lucene/ "));
+  }
+  
   public void testStopwords() throws Exception {
     CharacterRunAutomaton stopSet = new CharacterRunAutomaton(new RegExp("the|foo").toAutomaton());
     QueryParser qp = new QueryParser(TEST_VERSION_CURRENT, "a", new MockAnalyzer(MockTokenizer.SIMPLE, true, stopSet, true));

@@ -51,8 +51,10 @@ import org.apache.lucene.store.AlreadyClosedException;
 import org.apache.lucene.store.Directory;
 import org.apache.lucene.store.FSDirectory;
 import org.apache.lucene.store.LockObtainFailedException;
-import org.apache.lucene.store.MockRAMDirectory;
+import org.apache.lucene.store.MockDirectoryWrapper;
 import org.apache.lucene.store.NoSuchDirectoryException;
+import org.apache.lucene.store.RAMDirectory;
+import org.apache.lucene.store.LockReleaseFailedException;
 import org.apache.lucene.util.LuceneTestCase;
 import org.apache.lucene.util._TestUtil;
 import org.apache.lucene.util.BytesRef;
@@ -82,7 +84,7 @@ public class TestIndexReader extends LuceneTestCase
     }
     
     public void testCommitUserData() throws Exception {
-      MockRAMDirectory d = newDirectory(random);
+      Directory d = newDirectory(random);
 
       Map<String,String> commitUserData = new HashMap<String,String>();
       commitUserData.put("foo", "fighters");
@@ -137,7 +139,7 @@ public class TestIndexReader extends LuceneTestCase
     }
     
     public void testIsCurrent() throws Exception {
-      MockRAMDirectory d = newDirectory(random);
+      Directory d = newDirectory(random);
       IndexWriter writer = new IndexWriter(d, newIndexWriterConfig(random, 
         TEST_VERSION_CURRENT, new MockAnalyzer()));
       addDocumentWithFields(writer);
@@ -166,7 +168,7 @@ public class TestIndexReader extends LuceneTestCase
      * @throws Exception on error
      */
     public void testGetFieldNames() throws Exception {
-        MockRAMDirectory d = newDirectory(random);
+        Directory d = newDirectory(random);
         // set up writer
         IndexWriter writer = new IndexWriter(d, newIndexWriterConfig(random, 
             TEST_VERSION_CURRENT, new MockAnalyzer()));
@@ -258,7 +260,7 @@ public class TestIndexReader extends LuceneTestCase
     }
 
   public void testTermVectors() throws Exception {
-    MockRAMDirectory d = newDirectory(random);
+    Directory d = newDirectory(random);
     // set up writer
     IndexWriter writer = new IndexWriter(d, newIndexWriterConfig(random, 
         TEST_VERSION_CURRENT, new MockAnalyzer()));
@@ -613,7 +615,7 @@ public class TestIndexReader extends LuceneTestCase
 
     private void deleteReaderWriterConflict(boolean optimize) throws IOException {
         //Directory dir = new RAMDirectory();
-        Directory dir = getDirectory();
+        Directory dir = newDirectory(random);
 
         Term searchTerm = new Term("content", "aaa");
         Term searchTerm2 = new Term("content", "bbb");
@@ -689,16 +691,13 @@ public class TestIndexReader extends LuceneTestCase
         assertTermDocsCount("deleted termDocs", reader, searchTerm, 0);
         assertTermDocsCount("deleted termDocs", reader, searchTerm2, 100);
         reader.close();
+        dir.close();
     }
-
-  private Directory getDirectory() throws IOException {
-    return FSDirectory.open(new File(TEMP_DIR, "testIndex"));
-  }
 
   public void testFilesOpenClose() throws IOException {
         // Create initial data set
-        File dirFile = new File(TEMP_DIR, "testIndex");
-        Directory dir = getDirectory();
+        File dirFile = _TestUtil.getTempDir("TestIndexReader.testFilesOpenClose");
+        Directory dir = FSDirectory.open(dirFile);
         IndexWriter writer  = new IndexWriter(dir, newIndexWriterConfig(random, TEST_VERSION_CURRENT, new MockAnalyzer()));
         addDoc(writer, "test");
         writer.close();
@@ -706,7 +705,7 @@ public class TestIndexReader extends LuceneTestCase
 
         // Try to erase the data - this ensures that the writer closed all files
         _TestUtil.rmDir(dirFile);
-        dir = getDirectory();
+        dir = FSDirectory.open(dirFile);
 
         // Now create the data set again, just as before
         writer  = new IndexWriter(dir, newIndexWriterConfig(random, TEST_VERSION_CURRENT, new MockAnalyzer()).setOpenMode(OpenMode.CREATE));
@@ -715,7 +714,7 @@ public class TestIndexReader extends LuceneTestCase
         dir.close();
 
         // Now open existing directory and test that reader closes all files
-        dir = getDirectory();
+        dir = FSDirectory.open(dirFile);
         IndexReader reader1 = IndexReader.open(dir, false);
         reader1.close();
         dir.close();
@@ -726,43 +725,33 @@ public class TestIndexReader extends LuceneTestCase
     }
 
     public void testLastModified() throws Exception {
-      final File fileDir = new File(TEMP_DIR, "testIndex");
       for(int i=0;i<2;i++) {
-        try {
-          final Directory dir;
-          if (0 == i)
-            dir = newDirectory(random);
-          else
-            dir = getDirectory();
-          assertFalse(IndexReader.indexExists(dir));
-          IndexWriter writer  = new IndexWriter(dir, newIndexWriterConfig(random, TEST_VERSION_CURRENT, new MockAnalyzer()).setOpenMode(OpenMode.CREATE));
-          addDocumentWithFields(writer);
-          assertTrue(IndexWriter.isLocked(dir));		// writer open, so dir is locked
-          writer.close();
-          assertTrue(IndexReader.indexExists(dir));
-          IndexReader reader = IndexReader.open(dir, false);
-          assertFalse(IndexWriter.isLocked(dir));		// reader only, no lock
-          long version = IndexReader.lastModified(dir);
-          if (i == 1) {
-            long version2 = IndexReader.lastModified(dir);
-            assertEquals(version, version2);
-          }
-          reader.close();
-          // modify index and check version has been
-          // incremented:
-          Thread.sleep(1000);
-
-          writer  = new IndexWriter(dir, newIndexWriterConfig(random, TEST_VERSION_CURRENT, new MockAnalyzer()).setOpenMode(OpenMode.CREATE));
-          addDocumentWithFields(writer);
-          writer.close();
-          reader = IndexReader.open(dir, false);
-          assertTrue("old lastModified is " + version + "; new lastModified is " + IndexReader.lastModified(dir), version <= IndexReader.lastModified(dir));
-          reader.close();
-          dir.close();
-        } finally {
-          if (i == 1)
-            _TestUtil.rmDir(fileDir);
+        final Directory dir = newDirectory(random);
+        assertFalse(IndexReader.indexExists(dir));
+        IndexWriter writer  = new IndexWriter(dir, newIndexWriterConfig(random, TEST_VERSION_CURRENT, new MockAnalyzer()).setOpenMode(OpenMode.CREATE));
+        addDocumentWithFields(writer);
+        assertTrue(IndexWriter.isLocked(dir));		// writer open, so dir is locked
+        writer.close();
+        assertTrue(IndexReader.indexExists(dir));
+        IndexReader reader = IndexReader.open(dir, false);
+        assertFalse(IndexWriter.isLocked(dir));		// reader only, no lock
+        long version = IndexReader.lastModified(dir);
+        if (i == 1) {
+          long version2 = IndexReader.lastModified(dir);
+          assertEquals(version, version2);
         }
+        reader.close();
+        // modify index and check version has been
+        // incremented:
+        Thread.sleep(1000);
+
+        writer  = new IndexWriter(dir, newIndexWriterConfig(random, TEST_VERSION_CURRENT, new MockAnalyzer()).setOpenMode(OpenMode.CREATE));
+        addDocumentWithFields(writer);
+        writer.close();
+        reader = IndexReader.open(dir, false);
+        assertTrue("old lastModified is " + version + "; new lastModified is " + IndexReader.lastModified(dir), version <= IndexReader.lastModified(dir));
+        reader.close();
+        dir.close();
       }
     }
 
@@ -794,7 +783,7 @@ public class TestIndexReader extends LuceneTestCase
       IndexWriter writer  = new IndexWriter(dir, newIndexWriterConfig(random, TEST_VERSION_CURRENT, new MockAnalyzer()));
       addDocumentWithFields(writer);
       writer.close();
-      writer  = new IndexWriter(dir, newIndexWriterConfig(random, TEST_VERSION_CURRENT, new MockAnalyzer()).setOpenMode(OpenMode.APPEND));
+      writer = new IndexWriter(dir, newIndexWriterConfig(random, TEST_VERSION_CURRENT, new MockAnalyzer()).setOpenMode(OpenMode.APPEND));
       IndexReader reader = IndexReader.open(dir, false);
       try {
         reader.deleteDocument(0);
@@ -802,7 +791,11 @@ public class TestIndexReader extends LuceneTestCase
       } catch(IOException e) {
         // expected exception
       }
-      IndexWriter.unlock(dir);		// this should not be done in the real world! 
+      try {
+        IndexWriter.unlock(dir);		// this should not be done in the real world! 
+      } catch (LockReleaseFailedException lrfe) {
+        writer.close();
+      }
       reader.deleteDocument(0);
       reader.close();
       writer.close();
@@ -881,7 +874,7 @@ public class TestIndexReader extends LuceneTestCase
       int END_COUNT = 144;
       
       // First build up a starting index:
-      MockRAMDirectory startDir = newDirectory(random);
+      MockDirectoryWrapper startDir = newDirectory(random);
       IndexWriter writer = new IndexWriter(startDir, newIndexWriterConfig(random, TEST_VERSION_CURRENT, new MockAnalyzer()));
       for(int i=0;i<157;i++) {
         Document d = new Document();
@@ -893,7 +886,7 @@ public class TestIndexReader extends LuceneTestCase
       }
       writer.close();
 
-      long diskUsage = ((MockRAMDirectory) startDir).getRecomputedActualSizeInBytes();
+      long diskUsage = startDir.getRecomputedActualSizeInBytes();
       long diskFree = diskUsage+100;
 
       IOException err = null;
@@ -903,7 +896,7 @@ public class TestIndexReader extends LuceneTestCase
 
       // Iterate w/ ever increasing free disk space:
       while(!done) {
-        MockRAMDirectory dir = new MockRAMDirectory(startDir);
+        MockDirectoryWrapper dir = new MockDirectoryWrapper(new RAMDirectory(startDir));
 
         // If IndexReader hits disk full, it can write to
         // the same files again.
@@ -1149,8 +1142,38 @@ public class TestIndexReader extends LuceneTestCase
       dir.close();
     }
 
+    public void testMultiReaderDeletes() throws Exception {
+      Directory dir = newDirectory(random);
+      RandomIndexWriter w = new RandomIndexWriter(random, dir);
+      Document doc = new Document();
+      doc.add(new Field("f", "doctor", Field.Store.NO, Field.Index.NOT_ANALYZED));
+      w.addDocument(doc);
+      doc = new Document();
+      w.commit();
+      doc.add(new Field("f", "who", Field.Store.NO, Field.Index.NOT_ANALYZED));
+      w.addDocument(doc);
+      IndexReader r = w.getReader();
+      IndexReader wr = SlowMultiReaderWrapper.wrap(r);
+      w.close();
+
+      assertNull(wr.getDeletedDocs());
+      r.close();
+
+      r = IndexReader.open(dir, false);
+      wr = SlowMultiReaderWrapper.wrap(r);
+
+      assertNull(wr.getDeletedDocs());
+      assertEquals(1, r.deleteDocuments(new Term("f", "doctor")));
+      assertNotNull(wr.getDeletedDocs());
+      assertTrue(wr.getDeletedDocs().get(0));
+      assertEquals(1, r.deleteDocuments(new Term("f", "who")));
+      assertTrue(wr.getDeletedDocs().get(1));
+      r.close();
+      dir.close();
+    }
+
     private void deleteReaderReaderConflict(boolean optimize) throws IOException {
-        Directory dir = getDirectory();
+        Directory dir = newDirectory(random);
 
         Term searchTerm1 = new Term("content", "aaa");
         Term searchTerm2 = new Term("content", "bbb");
@@ -1250,7 +1273,6 @@ public class TestIndexReader extends LuceneTestCase
         dir.close();
     }
 
-
     private void addDocumentWithFields(IndexWriter writer) throws IOException
     {
         Document doc = new Document();
@@ -1333,13 +1355,17 @@ public class TestIndexReader extends LuceneTestCase
       }
       
       // check deletions
+      final Bits delDocs1 = MultiFields.getDeletedDocs(index1);
+      final Bits delDocs2 = MultiFields.getDeletedDocs(index2);
       for (int i = 0; i < index1.maxDoc(); i++) {
-        assertEquals("Doc " + i + " only deleted in one index.", index1.isDeleted(i), index2.isDeleted(i));
+        assertEquals("Doc " + i + " only deleted in one index.",
+                     delDocs1 == null || delDocs1.get(i),
+                     delDocs2 == null || delDocs2.get(i));
       }
       
       // check stored fields
       for (int i = 0; i < index1.maxDoc(); i++) {
-        if (!index1.isDeleted(i)) {
+        if (delDocs1 == null || !delDocs1.get(i)) {
           Document doc1 = index1.document(i);
           Document doc2 = index2.document(i);
           List<Fieldable> fieldable1 = doc1.getFields();
@@ -1384,7 +1410,7 @@ public class TestIndexReader extends LuceneTestCase
 
     public void testGetIndexCommit() throws IOException {
 
-      MockRAMDirectory d = newDirectory(random);
+      Directory d = newDirectory(random);
 
       // set up writer
       IndexWriter writer = new IndexWriter(d, newIndexWriterConfig(random, 
@@ -1433,7 +1459,7 @@ public class TestIndexReader extends LuceneTestCase
     }      
 
     public void testReadOnly() throws Throwable {
-      MockRAMDirectory d = newDirectory(random);
+      Directory d = newDirectory(random);
       IndexWriter writer = new IndexWriter(d, newIndexWriterConfig(random, 
         TEST_VERSION_CURRENT, new MockAnalyzer()));
       addDocumentWithFields(writer);
@@ -1520,7 +1546,7 @@ public class TestIndexReader extends LuceneTestCase
 
   // LUCENE-1647
   public void testIndexReaderUnDeleteAll() throws Exception {
-    MockRAMDirectory dir = newDirectory(random);
+    MockDirectoryWrapper dir = newDirectory(random);
     dir.setPreventDoubleWrite(false);
     IndexWriter writer = new IndexWriter(dir, newIndexWriterConfig(random, 
         TEST_VERSION_CURRENT, new MockAnalyzer()));
@@ -1670,7 +1696,7 @@ public class TestIndexReader extends LuceneTestCase
 
     // Reopen to readonly w/ no chnages
     IndexReader r3 = r.reopen(true);
-    assertTrue(r3 instanceof ReadOnlyDirectoryReader);
+    assertTrue(((DirectoryReader) r3).readOnly);
     r3.close();
 
     // Add new segment
@@ -1680,13 +1706,13 @@ public class TestIndexReader extends LuceneTestCase
     // Reopen reader1 --> reader2
     IndexReader r2 = r.reopen(true);
     r.close();
-    assertTrue(r2 instanceof ReadOnlyDirectoryReader);
+    assertTrue(((DirectoryReader) r2).readOnly);
     IndexReader[] subs = r2.getSequentialSubReaders();
     final int[] ints2 = FieldCache.DEFAULT.getInts(subs[0], "number");
     r2.close();
 
-    assertTrue(subs[0] instanceof ReadOnlySegmentReader);
-    assertTrue(subs[1] instanceof ReadOnlySegmentReader);
+    assertTrue(((SegmentReader) subs[0]).readOnly);
+    assertTrue(((SegmentReader) subs[1]).readOnly);
     assertTrue(ints == ints2);
 
     dir.close();

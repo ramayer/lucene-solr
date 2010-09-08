@@ -54,7 +54,7 @@ public final class IndexWriterConfig implements Cloneable {
    */
   public static enum OpenMode { CREATE, APPEND, CREATE_OR_APPEND }
   
-  /** Default value is 128. Change using {@link #setTermIndexInterval(int)}. */
+  /** Default value is 32. Change using {@link #setTermIndexInterval(int)}. */
   public static final int DEFAULT_TERM_INDEX_INTERVAL = 32;
 
   /** Denotes a flush trigger is disabled. */
@@ -601,7 +601,7 @@ public final class IndexWriterConfig implements Cloneable {
     return this;
   }
 
-  /** @see #setReaderTermsIndexDivisor() */
+  /** @see #setReaderTermsIndexDivisor(int) */
   public int getReaderTermsIndexDivisor() {
     return readerTermsIndexDivisor;
   }
@@ -610,7 +610,7 @@ public final class IndexWriterConfig implements Cloneable {
   public String toString() {
     StringBuilder sb = new StringBuilder();
     sb.append("matchVersion=").append(matchVersion).append("\n");
-    sb.append("analyzer=").append(analyzer.getClass().getName()).append("\n");
+    sb.append("analyzer=").append(analyzer == null ? "null" : analyzer.getClass().getName()).append("\n");
     sb.append("delPolicy=").append(delPolicy.getClass().getName()).append("\n");
     sb.append("commit=").append(commit == null ? "null" : commit.getClass().getName()).append("\n");
     sb.append("openMode=").append(openMode).append("\n");
