@@ -315,14 +315,11 @@ class ExtendedDismaxQParser extends QParser {
 
         // full phrase and shingles
         for (FieldParams phraseField: allPhraseFields) {
-          String field  = phraseField.field;
-          int wordGrams = phraseField.wordGrams;
           Integer slop = (phraseField.slop == null) ? pslop : phraseField.slop;
-          float boost   = phraseField.boost;
           Map<String,Float> pf = new HashMap<String,Float>(1);
-          pf.put(field,boost);
-          addShingledPhraseQueries(query, normalClauses, pf, wordGrams,  
-                                  tiebreaker, slop);
+          pf.put(phraseField.field,phraseField.boost);
+          addShingledPhraseQueries(query, normalClauses, pf,   
+				   phraseField.wordGrams,tiebreaker, slop);
         }
         
       }
