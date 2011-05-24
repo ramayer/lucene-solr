@@ -18,10 +18,8 @@
 package org.apache.solr.client.solrj.embedded;
 
 import org.apache.solr.client.solrj.SolrExampleTests;
-import org.apache.solr.client.solrj.SolrServer;
 import org.apache.solr.client.solrj.impl.CommonsHttpSolrServer;
-import org.apache.solr.core.SolrCore;
-import org.apache.solr.schema.SchemaField;
+import org.apache.solr.util.ExternalPaths;
 import org.junit.Assert;
 import org.junit.BeforeClass;
 import org.junit.Test;
@@ -36,7 +34,7 @@ public class SolrExampleJettyTest extends SolrExampleTests {
 
   @BeforeClass
   public static void beforeTest() throws Exception {
-    createJetty(EXAMPLE_HOME, null, null);
+    createJetty(ExternalPaths.EXAMPLE_HOME, null, null);
   }
 
   @Test

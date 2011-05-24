@@ -17,22 +17,20 @@ package org.apache.lucene.index;
  * limitations under the License.
  */
 
-import static org.junit.Assert.*;
-
 import java.io.IOException;
 import java.util.Collection;
 import java.util.Map;
 
 import org.apache.lucene.store.Directory;
-import org.apache.lucene.util.LuceneTestCaseJ4;
+import org.apache.lucene.util.LuceneTestCase;
 import org.junit.Test;
 
-public class TestIndexCommit extends LuceneTestCaseJ4 {
+public class TestIndexCommit extends LuceneTestCase {
 
   @Test
   public void testEqualsHashCode() throws Exception {
     // LUCENE-2417: equals and hashCode() impl was inconsistent
-    final Directory dir = newDirectory(newRandom());
+    final Directory dir = newDirectory();
     
     IndexCommit ic1 = new IndexCommit() {
       @Override public String getSegmentsFileName() { return "a"; }

@@ -30,9 +30,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.WeakHashMap;
 
-import org.apache.solr.common.params.CommonParams;
 import org.apache.solr.common.params.QueryElevationParams;
-
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -45,9 +43,11 @@ import org.apache.lucene.analysis.Analyzer;
 import org.apache.lucene.analysis.TokenStream;
 import org.apache.lucene.analysis.tokenattributes.CharTermAttribute;
 import org.apache.lucene.index.IndexReader;
+import org.apache.lucene.index.IndexReader.AtomicReaderContext;
 import org.apache.lucene.index.Term;
 import org.apache.lucene.search.*;
 import org.apache.lucene.util.StringHelper;
+import org.apache.solr.cloud.ZkController;
 import org.apache.lucene.util.BytesRef;
 import org.apache.solr.common.SolrException;
 import org.apache.solr.common.params.SolrParams;
@@ -67,6 +67,7 @@ import org.apache.solr.util.plugin.SolrCoreAware;
 import org.apache.solr.request.SolrQueryRequest;
 import org.w3c.dom.Node;
 import org.w3c.dom.NodeList;
+import org.xml.sax.InputSource;
 
 /**
  * A component to elevate some documents to the top of the result set.
@@ -172,24 +173,35 @@ public class QueryElevationComponent extends SearchComponent implements SolrCore
               "QueryElevationComponent must specify argument: '"+CONFIG_FILE
               +"' -- path to elevate.xml" );
         }
-        File fC = new File( core.getResourceLoader().getConfigDir(), f );
-        File fD = new File( core.getDataDir(), f );
-        if( fC.exists() == fD.exists() ) {
-          throw new SolrException( SolrException.ErrorCode.SERVER_ERROR,
-              "QueryElevationComponent missing config file: '"+f + "\n"
-              +"either: "+fC.getAbsolutePath() + " or " + fD.getAbsolutePath() + " must exist, but not both." );
+        boolean exists = false;
+
+        // check if using ZooKeeper
+        ZkController zkController = core.getCoreDescriptor().getCoreContainer().getZkController();
+        if(zkController != null) {
+          // TODO : shouldn't have to keep reading the config name when it has been read before
+          exists = zkController.configFileExists(zkController.readConfigName(core.getCoreDescriptor().getCloudDescriptor().getCollectionName()), f);
+        } else {
+          File fC = new File( core.getResourceLoader().getConfigDir(), f );
+          File fD = new File( core.getDataDir(), f );
+          if( fC.exists() == fD.exists() ) {
+            throw new SolrException( SolrException.ErrorCode.SERVER_ERROR,
+                "QueryElevationComponent missing config file: '"+f + "\n"
+                +"either: "+fC.getAbsolutePath() + " or " + fD.getAbsolutePath() + " must exist, but not both." );
+          }
+          if( fC.exists() ) {
+            exists = true;
+            log.info( "Loading QueryElevation from: "+ fC.getAbsolutePath() );
+            Config cfg = new Config( core.getResourceLoader(), f );
+            elevationCache.put(null, loadElevationMap( cfg ));
+          } 
         }
-        if( fC.exists() ) {
-          log.info( "Loading QueryElevation from: "+fC.getAbsolutePath() );
-          Config cfg = new Config( core.getResourceLoader(), f );
-          elevationCache.put(null, loadElevationMap( cfg ));
-        }
-        else {
+        
+        if (!exists){
           // preload the first data
           RefCounted<SolrIndexSearcher> searchHolder = null;
           try {
             searchHolder = core.getNewestSearcher(false);
-            IndexReader reader = searchHolder.get().getReader();
+            IndexReader reader = searchHolder.get().getIndexReader();
             getElevationMap( reader, core );
           } finally {
             if (searchHolder != null) searchHolder.decref();
@@ -219,7 +231,7 @@ public class QueryElevationComponent extends SearchComponent implements SolrCore
         log.info( "Loading QueryElevation from data dir: "+f );
 
         InputStream is = VersionedFile.getLatestFile( core.getDataDir(), f );
-        Config cfg = new Config( core.getResourceLoader(), f, is, null );
+        Config cfg = new Config( core.getResourceLoader(), f, new InputSource(is), null );
         map = loadElevationMap( cfg );
         elevationCache.put( reader, map );
       }
@@ -333,7 +345,7 @@ public class QueryElevationComponent extends SearchComponent implements SolrCore
     }
 
     qstr = getAnalyzedQuery(qstr);
-    IndexReader reader = req.getSearcher().getReader();
+    IndexReader reader = req.getSearcher().getIndexReader();
     ElevationObj booster = null;
     try {
       booster = getElevationMap( reader, req.getCore() ).get( qstr );
@@ -463,6 +475,7 @@ class ElevationComparatorSource extends FieldComparatorSource {
     this.priority = boosts;
   }
 
+  @Override
   public FieldComparator newComparator(final String fieldname, final int numHits, int sortPos, boolean reversed) throws IOException {
     return new FieldComparator() {
       
@@ -471,10 +484,12 @@ class ElevationComparatorSource extends FieldComparatorSource {
       int bottomVal;
       private final BytesRef tempBR = new BytesRef();
 
+      @Override
       public int compare(int slot1, int slot2) {
         return values[slot2] - values[slot1];  // values will be small enough that there is no overflow concern
       }
 
+      @Override
       public void setBottom(int slot) {
         bottomVal = values[slot];
       }
@@ -485,18 +500,23 @@ class ElevationComparatorSource extends FieldComparatorSource {
         return prio == null ? 0 : prio.intValue();
       }
 
+      @Override
       public int compareBottom(int doc) throws IOException {
         return docVal(doc) - bottomVal;
       }
 
+      @Override
       public void copy(int slot, int doc) throws IOException {
         values[slot] = docVal(doc);
       }
 
-      public void setNextReader(IndexReader reader, int docBase) throws IOException {
-        idIndex = FieldCache.DEFAULT.getTermsIndex(reader, fieldname);
+      @Override
+      public FieldComparator setNextReader(AtomicReaderContext context) throws IOException {
+        idIndex = FieldCache.DEFAULT.getTermsIndex(context.reader, fieldname);
+        return this;
       }
 
+      @Override
       public Comparable value(int slot) {
         return values[slot];
       }

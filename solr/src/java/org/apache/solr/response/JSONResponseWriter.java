@@ -17,24 +17,24 @@
 
 package org.apache.solr.response;
 
-import org.apache.lucene.document.Document;
+import java.io.IOException;
+import java.io.Writer;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.HashMap;
+import java.util.Iterator;
+import java.util.Map;
+import java.util.Set;
+
 import org.apache.lucene.document.Fieldable;
 import org.apache.lucene.util.StringHelper;
 import org.apache.solr.common.SolrDocument;
-import org.apache.solr.common.SolrDocumentList;
 import org.apache.solr.common.params.CommonParams;
 import org.apache.solr.common.util.NamedList;
 import org.apache.solr.common.util.SimpleOrderedMap;
 import org.apache.solr.request.SolrQueryRequest;
 import org.apache.solr.schema.SchemaField;
-import org.apache.solr.schema.TextField;
-import org.apache.solr.search.DocIterator;
-import org.apache.solr.search.DocList;
-import org.apache.solr.search.SolrIndexSearcher;
-
-import java.io.IOException;
-import java.io.Writer;
-import java.util.*;
+import org.apache.solr.search.ReturnFields;
 
 /**
  * @version $Id$
@@ -63,10 +63,6 @@ public class JSONResponseWriter implements QueryResponseWriter {
 
 
 class JSONWriter extends TextResponseWriter {
-
-  // cache the calendar instance in case we are writing many dates...
-  private Calendar cal;
-
   private String namedListStyle;
   private String wrapperFunction;
 
@@ -76,7 +72,6 @@ class JSONWriter extends TextResponseWriter {
   private static final String JSON_NL_ARROFARR="arrarr";
   private static final String JSON_NL_ARROFMAP="arrmap";
   private static final String JSON_WRAPPER_FUNCTION="json.wrf";
-
 
   public JSONWriter(Writer writer, SolrQueryRequest req, SolrQueryResponse rsp) {
     super(writer, req, rsp);
@@ -290,6 +285,7 @@ class JSONWriter extends TextResponseWriter {
   }
 
 
+  @Override
   public void writeNamedList(String name, NamedList val) throws IOException {
     if (val instanceof SimpleOrderedMap) {
       writeNamedListAsMapWithDups(name,val);
@@ -315,93 +311,22 @@ class JSONWriter extends TextResponseWriter {
     }
   }
 
-  public void writeDoc(String name, Collection<Fieldable> fields, Set<String> returnFields, Map pseudoFields) throws IOException {
-    writeMapOpener(-1); // no trivial way to determine map size
-    incLevel();
-
-    HashMap<String, MultiValueField> multi = new HashMap<String, MultiValueField>();
-
-    boolean first=true;
-
-    for (Fieldable ff : fields) {
-      String fname = ff.name();
-      if (returnFields!=null && !returnFields.contains(fname)) {
-        continue;
-      }
-
-      // if the field is multivalued, it may have other values further on... so
-      // build up a list for each multi-valued field.
-      SchemaField sf = schema.getField(fname);
-      if (sf.multiValued()) {
-        MultiValueField mf = multi.get(fname);
-        if (mf==null) {
-          mf = new MultiValueField(sf, ff);
-          multi.put(fname, mf);
-        } else {
-          mf.fields.add(ff);
-        }
-      } else {
-        // not multi-valued, so write it immediately.
-        if (first) {
-          first=false;
-        } else {
-          writeMapSeparator();
-        }
-        indent();
-        writeKey(fname,true);
-        sf.write(this, fname, ff);
-      }
+  @Override
+  public void writeSolrDocument(String name, SolrDocument doc, ReturnFields returnFields, int idx) throws IOException {
+    if( idx > 0 ) {
+      writeArraySeparator();
     }
 
-    for(MultiValueField mvf : multi.values()) {
-      if (first) {
-        first=false;
-      } else {
-        writeMapSeparator();
-      }
-
-      indent();
-      writeKey(mvf.sfield.getName(), true);
-
-      boolean indentArrElems=false;
-      if (doIndent) {
-        // heuristic... TextField is probably the only field type likely to be long enough
-        // to warrant indenting individual values.
-        indentArrElems = (mvf.sfield.getType() instanceof TextField);
-      }
-
-      writeArrayOpener(-1); // no trivial way to determine array size
-      boolean firstArrElem=true;
-      incLevel();
-
-      for (Fieldable ff : mvf.fields) {
-        if (firstArrElem) {
-          firstArrElem=false;
-        } else {
-          writeArraySeparator();
-        }
-        if (indentArrElems) indent();
-        mvf.sfield.write(this, null, ff);
-      }
-      writeArrayCloser();
-      decLevel();
-    }
-
-    if (pseudoFields !=null && pseudoFields.size()>0) {
-      writeMap(null,pseudoFields,true,first);
-    }
-
-    decLevel();
-    writeMapCloser();
-  }
-
-  public void writeSolrDocument(String name, SolrDocument doc, Set<String> returnFields, Map pseudoFields) throws IOException {
-    writeMapOpener(-1); // no trivial way to determine map size
-    // TODO: could easily figure out size for SolrDocument if needed...
+    indent();
+    writeMapOpener(doc.size()); 
     incLevel();
 
     boolean first=true;
     for (String fname : doc.getFieldNames()) {
+      if (!returnFields.wantsField(fname)) {
+        continue;
+      }
+      
       if (first) {
         first=false;
       }
@@ -426,141 +351,42 @@ class JSONWriter extends TextResponseWriter {
           writeVal(fname, val);
         }
       }
-
-      if (pseudoFields !=null && pseudoFields.size()>0) {
-        writeMap(null,pseudoFields,true,first);
-      }
     }
-
+    
     decLevel();
     writeMapCloser();
   }
-
-
-  // reusable map to store the "score" pseudo-field.
-  // if a Doc can ever contain another doc, this optimization would have to go.
-  private final HashMap scoreMap = new HashMap(1);
-
-  public void writeDoc(String name, Document doc, Set<String> returnFields, float score, boolean includeScore) throws IOException {
-    Map other = null;
-    if (includeScore) {
-      other = scoreMap;
-      scoreMap.put("score",score);
-    }
-    writeDoc(name, (List<Fieldable>)(doc.getFields()), returnFields, other);
-  }
-
-  public void writeDocList(String name, DocList ids, Set<String> fields, Map otherFields) throws IOException {
-    boolean includeScore=false;
-    if (fields!=null) {
-      includeScore = fields.contains("score");
-      if (fields.size()==0 || (fields.size()==1 && includeScore) || fields.contains("*")) {
-        fields=null;  // null means return all stored fields
-      }
-    }
-
-    int sz=ids.size();
-
-    writeMapOpener(includeScore ? 4 : 3);
-    incLevel();
-    writeKey("numFound",false);
-    writeInt(null,ids.matches());
-    writeMapSeparator();
-    writeKey("start",false);
-    writeInt(null,ids.offset());
-
-    if (includeScore) {
-      writeMapSeparator();
-      writeKey("maxScore",false);
-      writeFloat(null,ids.maxScore());
-    }
-    writeMapSeparator();
-    // indent();
-    writeKey("docs",false);
-    writeArrayOpener(sz);
-
-    incLevel();
-    boolean first=true;
-
-    SolrIndexSearcher searcher = req.getSearcher();
-    // be defensive... write out the doc even if we don't have the scores like we should
-    includeScore = includeScore && ids.hasScores();
-    DocIterator iterator = ids.iterator();
-    for (int i=0; i<sz; i++) {
-      int id = iterator.nextDoc();
-      Document doc = searcher.doc(id, fields);
-
-      if (first) {
-        first=false;
-      } else {
-        writeArraySeparator();
-      }
-      indent();
-      writeDoc(null, doc, fields, (includeScore ? iterator.score() : 0.0f), includeScore);
-    }
-    decLevel();
-    writeArrayCloser();
-
-    if (otherFields !=null) {
-      writeMap(null, otherFields, true, false);
-    }
-
-    decLevel();
-    indent();
-    writeMapCloser();
-  }
-
 
   @Override
-  public void writeSolrDocumentList(String name, SolrDocumentList docs, Set<String> fields, Map otherFields) throws IOException {
-    boolean includeScore=false;
-    if (fields!=null) {
-      includeScore = fields.contains("score");
-      if (fields.size()==0 || (fields.size()==1 && includeScore) || fields.contains("*")) {
-        fields=null;  // null means return all stored fields
-      }
-    }
-
-    int sz=docs.size();
-
-    writeMapOpener(includeScore ? 4 : 3);
+  public void writeStartDocumentList(String name, 
+      long start, int size, long numFound, Float maxScore) throws IOException
+  {
+    writeMapOpener((maxScore==null) ? 3 : 4);
     incLevel();
     writeKey("numFound",false);
-    writeLong(null,docs.getNumFound());
+    writeLong(null,numFound);
     writeMapSeparator();
     writeKey("start",false);
-    writeLong(null,docs.getStart());
+    writeLong(null,start);
 
-    if (includeScore && docs.getMaxScore() != null) {
+    if (maxScore!=null) {
       writeMapSeparator();
       writeKey("maxScore",false);
-      writeFloat(null,docs.getMaxScore());
+      writeFloat(null,maxScore);
     }
     writeMapSeparator();
     // indent();
     writeKey("docs",false);
-    writeArrayOpener(sz);
+    writeArrayOpener(size);
 
     incLevel();
-    boolean first=true;
+  }
 
-    SolrIndexSearcher searcher = req.getSearcher();
-    for (SolrDocument doc : docs) {
-
-      if (first) {
-        first=false;
-      } else {
-        writeArraySeparator();
-      }
-      indent();      
-      writeSolrDocument(null, doc, fields, otherFields);
-    }
+  @Override
+  public void writeEndDocumentList() throws IOException
+  {
     decLevel();
     writeArrayCloser();
-
-    if (otherFields !=null) {
-      writeMap(null, otherFields, true, false);
-    }
 
     decLevel();
     indent();
@@ -599,6 +425,7 @@ class JSONWriter extends TextResponseWriter {
     writer.write(']');
   }
 
+  @Override
   public void writeStr(String name, String val, boolean needsEscaping) throws IOException {
     // it might be more efficient to use a stringbuilder or write substrings
     // if writing chars to the stream is slow.
@@ -615,7 +442,7 @@ class JSONWriter extends TextResponseWriter {
 
       for (int i=0; i<val.length(); i++) {
         char ch = val.charAt(i);
-        if ((ch > '#' && ch != '\\' && ch !=  '\u2028') || ch==' ') { // fast path
+        if ((ch > '#' && ch != '\\' && ch < '\u2028') || ch == ' ') { // fast path
           writer.write(ch);
           continue;
         }
@@ -630,7 +457,10 @@ class JSONWriter extends TextResponseWriter {
           case '\t': writer.write('\\'); writer.write('t'); break;
           case '\b': writer.write('\\'); writer.write('b'); break;
           case '\f': writer.write('\\'); writer.write('f'); break;
-          case '\u2028': unicodeEscape(writer,ch); break;
+          case '\u2028': // fallthrough
+          case '\u2029':
+            unicodeEscape(writer,ch);
+            break;
           // case '/':
           default: {
             if (ch <= 0x1F) {
@@ -651,6 +481,7 @@ class JSONWriter extends TextResponseWriter {
   }
 
 
+  @Override
   public void writeMap(String name, Map val, boolean excludeOuter, boolean isFirstVal) throws IOException {
     if (!excludeOuter) {
       writeMapOpener(val.size());
@@ -682,10 +513,7 @@ class JSONWriter extends TextResponseWriter {
     }
   }
 
-  public void writeArray(String name, Object[] val) throws IOException {
-    writeArray(name, Arrays.asList(val).iterator());
-  }
-
+  @Override
   public void writeArray(String name, Iterator val) throws IOException {
     writeArrayOpener(-1); // no trivial way to determine array size
     incLevel();
@@ -705,97 +533,37 @@ class JSONWriter extends TextResponseWriter {
   //
   // Primitive types
   //
+  @Override
   public void writeNull(String name) throws IOException {
     writer.write("null");
   }
 
+  @Override
   public void writeInt(String name, String val) throws IOException {
     writer.write(val);
   }
 
+  @Override
   public void writeLong(String name, String val) throws IOException {
     writer.write(val);
   }
 
+  @Override
   public void writeBool(String name, String val) throws IOException {
     writer.write(val);
   }
 
+  @Override
   public void writeFloat(String name, String val) throws IOException {
     writer.write(val);
   }
 
+  @Override
   public void writeDouble(String name, String val) throws IOException {
     writer.write(val);
   }
 
-   @Override
-  public void writeShort(String name, String val) throws IOException {
-    writer.write(val);
-  }
-
-  public void writeByte(String name, String val) throws IOException {
-    writer.write(val);
-
-  }
-
-  // TODO: refactor this out to a DateUtils class or something...
-  public void writeDate(String name, Date val) throws IOException {
-    // using a stringBuilder for numbers can be nice since
-    // a temporary string isn't used (it's added directly to the
-    // builder's buffer.
-
-    StringBuilder sb = new StringBuilder();
-    if (cal==null) cal = Calendar.getInstance(TimeZone.getTimeZone("GMT"), Locale.US);
-    cal.setTime(val);
-
-    int i = cal.get(Calendar.YEAR);
-    sb.append(i);
-    sb.append('-');
-    i = cal.get(Calendar.MONTH) + 1;  // 0 based, so add 1
-    if (i<10) sb.append('0');
-    sb.append(i);
-    sb.append('-');
-    i=cal.get(Calendar.DAY_OF_MONTH);
-    if (i<10) sb.append('0');
-    sb.append(i);
-    sb.append('T');
-    i=cal.get(Calendar.HOUR_OF_DAY); // 24 hour time format
-    if (i<10) sb.append('0');
-    sb.append(i);
-    sb.append(':');
-    i=cal.get(Calendar.MINUTE);
-    if (i<10) sb.append('0');
-    sb.append(i);
-    sb.append(':');
-    i=cal.get(Calendar.SECOND);
-    if (i<10) sb.append('0');
-    sb.append(i);
-    i=cal.get(Calendar.MILLISECOND);
-    if (i != 0) {
-      sb.append('.');
-      if (i<100) sb.append('0');
-      if (i<10) sb.append('0');
-      sb.append(i);
-
-      // handle canonical format specifying fractional
-      // seconds shall not end in '0'.  Given the slowness of
-      // integer div/mod, simply checking the last character
-      // is probably the fastest way to check.
-      int lastIdx = sb.length()-1;
-      if (sb.charAt(lastIdx)=='0') {
-        lastIdx--;
-        if (sb.charAt(lastIdx)=='0') {
-          lastIdx--;
-        }
-        sb.setLength(lastIdx+1);
-      }
-
-    }
-    sb.append('Z');
-    writeDate(name, sb.toString());
-  }
-
+  @Override
   public void writeDate(String name, String val) throws IOException {
     writeStr(name, val, false);
   }

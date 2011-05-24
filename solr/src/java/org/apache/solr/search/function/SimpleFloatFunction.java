@@ -17,7 +17,7 @@
 
 package org.apache.solr.search.function;
 
-import org.apache.lucene.index.IndexReader;
+import org.apache.lucene.index.IndexReader.AtomicReaderContext;
 
 import java.io.IOException;
 import java.util.Map;
@@ -32,24 +32,14 @@ import java.util.Map;
   protected abstract float func(int doc, DocValues vals);
 
   @Override
-  public DocValues getValues(Map context, IndexReader reader) throws IOException {
-    final DocValues vals =  source.getValues(context, reader);
-    return new DocValues() {
+  public DocValues getValues(Map context, AtomicReaderContext readerContext) throws IOException {
+    final DocValues vals =  source.getValues(context, readerContext);
+    return new FloatDocValues(this) {
+      @Override
       public float floatVal(int doc) {
 	return func(doc, vals);
       }
-      public int intVal(int doc) {
-        return (int)floatVal(doc);
-      }
-      public long longVal(int doc) {
-        return (long)floatVal(doc);
-      }
-      public double doubleVal(int doc) {
-        return (double)floatVal(doc);
-      }
-      public String strVal(int doc) {
-        return Float.toString(floatVal(doc));
-      }
+      @Override
       public String toString(int doc) {
 	return name() + '(' + vals.toString(doc) + ')';
       }

@@ -30,6 +30,7 @@ import org.apache.lucene.analysis.CachingTokenFilter;
 import org.apache.lucene.analysis.TokenStream;
 import org.apache.lucene.index.IndexReader;
 import org.apache.lucene.index.Term;
+import org.apache.lucene.index.IndexReader.AtomicReaderContext;
 import org.apache.lucene.index.memory.MemoryIndex;
 import org.apache.lucene.search.*;
 import org.apache.lucene.search.spans.FieldMaskingSpanQuery;
@@ -50,11 +51,12 @@ public class WeightedSpanTermExtractor {
 
   private String fieldName;
   private TokenStream tokenStream;
-  private Map<String,IndexReader> readers = new HashMap<String,IndexReader>(10); 
+  private Map<String,AtomicReaderContext> readers = new HashMap<String,AtomicReaderContext>(10); 
   private String defaultField;
   private boolean expandMultiTermQuery;
   private boolean cachedTokenStream;
   private boolean wrapToCaching = true;
+  private int maxDocCharsToAnalyze;
 
   public WeightedSpanTermExtractor() {
   }
@@ -66,11 +68,11 @@ public class WeightedSpanTermExtractor {
   }
 
   private void closeReaders() {
-    Collection<IndexReader> readerSet = readers.values();
+    Collection<AtomicReaderContext> ctxSet = readers.values();
 
-    for (final IndexReader reader : readerSet) {
+    for (final AtomicReaderContext ctx : ctxSet) {
       try {
-        reader.close();
+        ctx.reader.close();
       } catch (IOException e) {
         // alert?
       }
@@ -149,20 +151,9 @@ public class WeightedSpanTermExtractor {
         query = mtq;
       }
       if (mtq.getField() != null) {
-        IndexReader ir = getReaderForField(mtq.getField());
+        IndexReader ir = getLeafContextForField(mtq.getField()).reader;
         extract(query.rewrite(ir), terms);
       }
-      // nocommit is this needed anymore?
-      /*
-      else {
-        FakeReader fReader = new FakeReader();
-        MultiTermQuery.SCORING_BOOLEAN_QUERY_REWRITE.rewrite(fReader, mtq);
-        if (fReader.field != null) {
-          IndexReader ir = getReaderForField(fReader.field);
-          extract(query.rewrite(ir), terms);
-        }
-      }
-      */
     } else if (query instanceof MultiPhraseQuery) {
       final MultiPhraseQuery mpq = (MultiPhraseQuery) query;
       final List<Term[]> termArrays = mpq.getTermArrays();
@@ -176,6 +167,7 @@ public class WeightedSpanTermExtractor {
           }
         }
 
+        @SuppressWarnings("unchecked")
         final List<SpanQuery>[] disjunctLists = new List[maxPosition + 1];
         int distinctPositions = 0;
 
@@ -244,7 +236,7 @@ public class WeightedSpanTermExtractor {
     final boolean mustRewriteQuery = mustRewriteQuery(spanQuery);
     if (mustRewriteQuery) {
       for (final String field : fieldNames) {
-        final SpanQuery rewrittenQuery = (SpanQuery) spanQuery.rewrite(getReaderForField(field));
+        final SpanQuery rewrittenQuery = (SpanQuery) spanQuery.rewrite(getLeafContextForField(field).reader);
         queries.put(field, rewrittenQuery);
         rewrittenQuery.extractTerms(nonWeightedTerms);
       }
@@ -256,12 +248,12 @@ public class WeightedSpanTermExtractor {
 
     for (final String field : fieldNames) {
 
-      IndexReader reader = getReaderForField(field);
+      AtomicReaderContext context = getLeafContextForField(field);
       final Spans spans;
       if (mustRewriteQuery) {
-        spans = queries.get(field).getSpans(reader);
+        spans = queries.get(field).getSpans(context);
       } else {
-        spans = spanQuery.getSpans(reader);
+        spans = spanQuery.getSpans(context);
       }
 
 
@@ -327,22 +319,23 @@ public class WeightedSpanTermExtractor {
     return rv;
   }
 
-  private IndexReader getReaderForField(String field) throws IOException {
+  private AtomicReaderContext getLeafContextForField(String field) throws IOException {
     if(wrapToCaching && !cachedTokenStream && !(tokenStream instanceof CachingTokenFilter)) {
-      tokenStream = new CachingTokenFilter(tokenStream);
+      tokenStream = new CachingTokenFilter(new OffsetLimitTokenFilter(tokenStream, maxDocCharsToAnalyze));
       cachedTokenStream = true;
     }
-    IndexReader reader = readers.get(field);
-    if (reader == null) {
+    AtomicReaderContext context = readers.get(field);
+    if (context == null) {
       MemoryIndex indexer = new MemoryIndex();
-      indexer.addField(field, tokenStream);
+      indexer.addField(field, new OffsetLimitTokenFilter(tokenStream, maxDocCharsToAnalyze));
       tokenStream.reset();
       IndexSearcher searcher = indexer.createSearcher();
-      reader = searcher.getIndexReader();
-      readers.put(field, reader);
+      // MEM index has only atomic ctx
+      context = (AtomicReaderContext) searcher.getTopReaderContext();
+      readers.put(field, context);
     }
 
-    return reader;
+    return context;
   }
 
   /**
@@ -506,12 +499,9 @@ public class WeightedSpanTermExtractor {
   static private class PositionCheckingMap<K> extends HashMap<K,WeightedSpanTerm> {
 
     @Override
-    public void putAll(Map m) {
-      Iterator<Map.Entry<K, WeightedSpanTerm>> it = m.entrySet().iterator();
-      while (it.hasNext()) {
-        Map.Entry<K, WeightedSpanTerm> entry = it.next();
+    public void putAll(Map<? extends K,? extends WeightedSpanTerm> m) {
+      for (Map.Entry<? extends K,? extends WeightedSpanTerm> entry : m.entrySet())
         this.put(entry.getKey(), entry.getValue());
-      }
     }
 
     @Override
@@ -555,5 +545,9 @@ public class WeightedSpanTermExtractor {
    */
   public void setWrapIfNotCachingTokenFilter(boolean wrap) {
     this.wrapToCaching = wrap;
+  }
+
+  protected final void setMaxDocCharsToAnalyze(int maxDocCharsToAnalyze) {
+    this.maxDocCharsToAnalyze = maxDocCharsToAnalyze;
   }
 }

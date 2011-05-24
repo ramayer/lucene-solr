@@ -30,37 +30,32 @@ import org.apache.lucene.store.Directory;
 
 import java.io.IOException;
 import java.util.LinkedList;
-import java.util.Random;
 
 /**
  * This class tests PhrasePrefixQuery class.
  */
 public class TestPhrasePrefixQuery extends LuceneTestCase {
-  public TestPhrasePrefixQuery(String name) {
-    super(name);
-  }
   
   /**
      *
      */
   public void testPhrasePrefix() throws IOException {
-    Random random = newRandom();
-    Directory indexStore = newDirectory(random);
+    Directory indexStore = newDirectory();
     RandomIndexWriter writer = new RandomIndexWriter(random, indexStore);
     Document doc1 = new Document();
     Document doc2 = new Document();
     Document doc3 = new Document();
     Document doc4 = new Document();
     Document doc5 = new Document();
-    doc1.add(new Field("body", "blueberry pie", Field.Store.YES,
+    doc1.add(newField("body", "blueberry pie", Field.Store.YES,
         Field.Index.ANALYZED));
-    doc2.add(new Field("body", "blueberry strudel", Field.Store.YES,
+    doc2.add(newField("body", "blueberry strudel", Field.Store.YES,
         Field.Index.ANALYZED));
-    doc3.add(new Field("body", "blueberry pizza", Field.Store.YES,
+    doc3.add(newField("body", "blueberry pizza", Field.Store.YES,
         Field.Index.ANALYZED));
-    doc4.add(new Field("body", "blueberry chewing gum", Field.Store.YES,
+    doc4.add(newField("body", "blueberry chewing gum", Field.Store.YES,
         Field.Index.ANALYZED));
-    doc5.add(new Field("body", "piccadilly circus", Field.Store.YES,
+    doc5.add(newField("body", "piccadilly circus", Field.Store.YES,
         Field.Index.ANALYZED));
     writer.addDocument(doc1);
     writer.addDocument(doc2);
@@ -70,7 +65,7 @@ public class TestPhrasePrefixQuery extends LuceneTestCase {
     IndexReader reader = writer.getReader();
     writer.close();
     
-    IndexSearcher searcher = new IndexSearcher(reader);
+    IndexSearcher searcher = newSearcher(reader);
     
     // PhrasePrefixQuery query1 = new PhrasePrefixQuery();
     MultiPhraseQuery query1 = new MultiPhraseQuery();

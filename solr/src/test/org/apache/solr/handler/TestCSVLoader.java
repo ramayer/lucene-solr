@@ -18,8 +18,8 @@
 package org.apache.solr.handler;
 
 import org.apache.solr.SolrTestCaseJ4;
-import org.apache.solr.util.AbstractSolrTestCase;
 import org.apache.solr.request.LocalSolrQueryRequest;
+import org.apache.solr.common.params.CommonParams;
 import org.apache.solr.common.util.ContentStream;
 import org.apache.solr.common.util.ContentStreamBase;
 import org.junit.After;
@@ -42,6 +42,7 @@ public class TestCSVLoader extends SolrTestCaseJ4 {
   String def_charset = "UTF-8";
   File file = new File(filename);
 
+  @Override
   @Before
   public void setUp() throws Exception {
     // if you override setUp or tearDown, you better call
@@ -50,6 +51,7 @@ public class TestCSVLoader extends SolrTestCaseJ4 {
     cleanup();
   }
   
+  @Override
   @After
   public void tearDown() throws Exception {
     // if you override setUp or tearDown, you better call
@@ -77,7 +79,7 @@ public class TestCSVLoader extends SolrTestCaseJ4 {
   }
 
   void cleanup() {
-    assertU(delQ("id:[100 TO 110]"));
+    assertU(delQ("*:*"));
     assertU(commit());
   }
 
@@ -120,12 +122,12 @@ public class TestCSVLoader extends SolrTestCaseJ4 {
 
   @Test
   public void testCSV() throws Exception {
-    lrf.args.put("version","2.0");
+    lrf.args.put(CommonParams.VERSION,"2.2");
     
     makeFile("id,str_s\n100,\"quoted\"\n101,\n102,\"\"\n103,");
     loadLocal("stream.file",filename,"commit","true");
     assertQ(req("id:[100 TO 110]"),"//*[@numFound='4']");
-    assertQ(req("id:100"),"//str[@name='str_s'][.='quoted']");
+    assertQ(req("id:100"),"//arr[@name='str_s']/str[.='quoted']");
     assertQ(req("id:101"),"count(//str[@name='str_s'])=0");
     // 102 is a quoted zero length field ,"", as opposed to ,,
     // but we can't distinguish this case (and it's debateable
@@ -153,7 +155,7 @@ public class TestCSVLoader extends SolrTestCaseJ4 {
     // test global value mapping
     loadLocal("stream.file",filename, "commit","true", "map","quoted:QUOTED");
     assertQ(req("id:[100 TO 110]"),"//*[@numFound='4']");
-    assertQ(req("id:100"),"//str[@name='str_s'][.='QUOTED']");
+    assertQ(req("id:100"),"//arr[@name='str_s']/str[.='QUOTED']");
     assertQ(req("id:101"),"count(//str[@name='str_s'])=0");
     assertQ(req("id:102"),"count(//str[@name='str_s'])=0");
     assertQ(req("id:103"),"count(//str[@name='str_s'])=0");
@@ -166,39 +168,39 @@ public class TestCSVLoader extends SolrTestCaseJ4 {
     // test value mapping from empty
     loadLocal("stream.file",filename, "commit","true", "map",":EMPTY");
     assertQ(req("id:[100 TO 110]"),"//*[@numFound='4']");
-    assertQ(req("id:100"),"//str[@name='str_s'][.='quoted']");
-    assertQ(req("id:101"),"//str[@name='str_s'][.='EMPTY']");
-    assertQ(req("id:102"),"//str[@name='str_s'][.='EMPTY']");
-    assertQ(req("id:103"),"//str[@name='str_s'][.='EMPTY']");
+    assertQ(req("id:100"),"//arr[@name='str_s']/str[.='quoted']");
+    assertQ(req("id:101"),"//arr[@name='str_s']/str[.='EMPTY']");
+    assertQ(req("id:102"),"//arr[@name='str_s']/str[.='EMPTY']");
+    assertQ(req("id:103"),"//arr[@name='str_s']/str[.='EMPTY']");
 
     // test multiple map rules
     loadLocal("stream.file",filename, "commit","true", "map",":EMPTY", "map","quoted:QUOTED");
     assertQ(req("id:[100 TO 110]"),"//*[@numFound='4']");
-    assertQ(req("id:100"),"//str[@name='str_s'][.='QUOTED']");
-    assertQ(req("id:101"),"//str[@name='str_s'][.='EMPTY']");
-    assertQ(req("id:102"),"//str[@name='str_s'][.='EMPTY']");
-    assertQ(req("id:103"),"//str[@name='str_s'][.='EMPTY']");
+    assertQ(req("id:100"),"//arr[@name='str_s']/str[.='QUOTED']");
+    assertQ(req("id:101"),"//arr[@name='str_s']/str[.='EMPTY']");
+    assertQ(req("id:102"),"//arr[@name='str_s']/str[.='EMPTY']");
+    assertQ(req("id:103"),"//arr[@name='str_s']/str[.='EMPTY']");
 
     // test indexing empty fields
     loadLocal("stream.file",filename, "commit","true", "f.str_s.keepEmpty","true");
     assertQ(req("id:[100 TO 110]"),"//*[@numFound='4']");
-    assertQ(req("id:100"),"//str[@name='str_s'][.='quoted']");
-    assertQ(req("id:101"),"//str[@name='str_s'][.='']");
-    assertQ(req("id:102"),"//str[@name='str_s'][.='']");
-    assertQ(req("id:103"),"//str[@name='str_s'][.='']");
+    assertQ(req("id:100"),"//arr[@name='str_s']/str[.='quoted']");
+    assertQ(req("id:101"),"//arr[@name='str_s']/str[.='']");
+    assertQ(req("id:102"),"//arr[@name='str_s']/str[.='']");
+    assertQ(req("id:103"),"//arr[@name='str_s']/str[.='']");
 
     // test overriding the name of fields
     loadLocal("stream.file",filename, "commit","true",
              "fieldnames","id,my_s", "header","true",
              "f.my_s.map",":EMPTY");
     assertQ(req("id:[100 TO 110]"),"//*[@numFound='4']");
-    assertQ(req("id:100"),"//str[@name='my_s'][.='quoted']");
-    assertQ(req("id:101"),"count(//str[@name='str_s'])=0");
-    assertQ(req("id:102"),"count(//str[@name='str_s'])=0");
-    assertQ(req("id:103"),"count(//str[@name='str_s'])=0");
-    assertQ(req("id:101"),"//str[@name='my_s'][.='EMPTY']");
-    assertQ(req("id:102"),"//str[@name='my_s'][.='EMPTY']");
-    assertQ(req("id:103"),"//str[@name='my_s'][.='EMPTY']");
+    assertQ(req("id:100"),"//arr[@name='my_s']/str[.='quoted']");
+    assertQ(req("id:101"),"count(//arr[@name='str_s']/str)=0");
+    assertQ(req("id:102"),"count(//arr[@name='str_s']/str)=0");
+    assertQ(req("id:103"),"count(//arr[@name='str_s']/str)=0");
+    assertQ(req("id:101"),"//arr[@name='my_s']/str[.='EMPTY']");
+    assertQ(req("id:102"),"//arr[@name='my_s']/str[.='EMPTY']");
+    assertQ(req("id:103"),"//arr[@name='my_s']/str[.='EMPTY']");
 
     // test that header in file was skipped
     assertQ(req("id:id"),"//*[@numFound='0']");
@@ -206,24 +208,24 @@ public class TestCSVLoader extends SolrTestCaseJ4 {
     // test skipping a field via the "skip" parameter
     loadLocal("stream.file",filename,"commit","true","keepEmpty","true","skip","str_s");
     assertQ(req("id:[100 TO 110]"),"//*[@numFound='4']");
-    assertQ(req("id:[100 TO 110]"),"count(//str[@name='str_s'])=0");
+    assertQ(req("id:[100 TO 110]"),"count(//str[@name='str_s']/str)=0");
 
     // test skipping a field by specifying an empty name
     loadLocal("stream.file",filename,"commit","true","keepEmpty","true","fieldnames","id,");
     assertQ(req("id:[100 TO 110]"),"//*[@numFound='4']");
-    assertQ(req("id:[100 TO 110]"),"count(//str[@name='str_s'])=0");
+    assertQ(req("id:[100 TO 110]"),"count(//str[@name='str_s']/str)=0");
 
     // test loading file as if it didn't have a header
     loadLocal("stream.file",filename, "commit","true",
              "fieldnames","id,my_s", "header","false");
     assertQ(req("id:id"),"//*[@numFound='1']");
-    assertQ(req("id:100"),"//str[@name='my_s'][.='quoted']");
+    assertQ(req("id:100"),"//arr[@name='my_s']/str[.='quoted']");
 
     // test skipLines
     loadLocal("stream.file",filename, "commit","true",
              "fieldnames","id,my_s", "header","false", "skipLines","1");
     assertQ(req("id:id"),"//*[@numFound='1']");
-    assertQ(req("id:100"),"//str[@name='my_s'][.='quoted']");
+    assertQ(req("id:100"),"//arr[@name='my_s']/str[.='quoted']");
 
 
     // test multi-valued fields via field splitting w/ mapping of subvalues
@@ -236,12 +238,12 @@ public class TestCSVLoader extends SolrTestCaseJ4 {
               "f.str_s.map",":EMPTY",
               "f.str_s.split","true");
     assertQ(req("id:[100 TO 110]"),"//*[@numFound='4']");
-    assertQ(req("id:100"),"//str[@name='str_s'][.='quoted']");
+    assertQ(req("id:100"),"//arr[@name='str_s']/str[.='quoted']");
     assertQ(req("id:101"),"//arr[@name='str_s']/str[1][.='a']");
     assertQ(req("id:101"),"//arr[@name='str_s']/str[2][.='b']");
     assertQ(req("id:101"),"//arr[@name='str_s']/str[3][.='c']");
     assertQ(req("id:102"),"//arr[@name='str_s']/str[2][.='EMPTY']");
-    assertQ(req("id:103"),"//str[@name='str_s'][.='EMPTY']");
+    assertQ(req("id:103"),"//arr[@name='str_s']/str[.='EMPTY']");
 
 
     // test alternate values for delimiters
@@ -262,13 +264,13 @@ public class TestCSVLoader extends SolrTestCaseJ4 {
               "f.str_s.encapsulator","'"
     );
     assertQ(req("id:[100 TO 110]"),"//*[@numFound='5']");
-    assertQ(req("id:100"),"//str[@name='str_s'][.='quoted']");
+    assertQ(req("id:100"),"//arr[@name='str_s']/str[.='quoted']");
     assertQ(req("id:101"),"//arr[@name='str_s']/str[1][.='a']");
     assertQ(req("id:101"),"//arr[@name='str_s']/str[2][.='b']");
     assertQ(req("id:101"),"//arr[@name='str_s']/str[3][.='c']");
     assertQ(req("id:102"),"//arr[@name='str_s']/str[2][.='EMPTY']");
-    assertQ(req("id:103"),"//str[@name='str_s'][.='EMPTY']");
-    assertQ(req("id:104"),"//str[@name='str_s'][.='a\\\\b']");
+    assertQ(req("id:103"),"//arr[@name='str_s']/str[.='EMPTY']");
+    assertQ(req("id:104"),"//arr[@name='str_s']/str[.='a\\\\b']");
 
     // test no escaping + double encapsulator escaping by default
     makeFile("id,str_s\n"
@@ -278,9 +280,9 @@ public class TestCSVLoader extends SolrTestCaseJ4 {
     );
     loadLocal("stream.file",filename, "commit","true"
     );
-    assertQ(req("id:100"),"//str[@name='str_s'][.='quoted \" \\ string']");
-    assertQ(req("id:101"),"//str[@name='str_s'][.='unquoted \"\" \\ string']");
-    assertQ(req("id:102"),"//str[@name='str_s'][.='end quote \\']");
+    assertQ(req("id:100"),"//arr[@name='str_s']/str[.='quoted \" \\ string']");
+    assertQ(req("id:101"),"//arr[@name='str_s']/str[.='unquoted \"\" \\ string']");
+    assertQ(req("id:102"),"//arr[@name='str_s']/str[.='end quote \\']");
 
 
     // setting an escape should disable encapsulator
@@ -291,8 +293,8 @@ public class TestCSVLoader extends SolrTestCaseJ4 {
     loadLocal("stream.file",filename, "commit","true"
             ,"escape","\\"
     );
-    assertQ(req("id:100"),"//str[@name='str_s'][.='\"quoted \"\" \" \\ string\"']");
-    assertQ(req("id:101"),"//str[@name='str_s'][.='unquoted \"\" \" , \\ string']");
+    assertQ(req("id:100"),"//arr[@name='str_s']/str[.='\"quoted \"\" \" \\ string\"']");
+    assertQ(req("id:101"),"//arr[@name='str_s']/str[.='unquoted \"\" \" , \\ string']");
 
   }
 

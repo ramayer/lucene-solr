@@ -17,10 +17,7 @@ package org.apache.lucene.search;
  * limitations under the License.
  */
 
-import java.util.Random;
-
 import org.apache.lucene.document.Document;
-import org.apache.lucene.document.Field;
 import org.apache.lucene.document.Field.Index;
 import org.apache.lucene.document.Field.Store;
 import org.apache.lucene.index.IndexReader;
@@ -33,11 +30,10 @@ import org.apache.lucene.util.LuceneTestCase;
 public class TestQueryWrapperFilter extends LuceneTestCase {
 
   public void testBasic() throws Exception {
-    Random random = newRandom();
-    Directory dir = newDirectory(random);
+    Directory dir = newDirectory();
     RandomIndexWriter writer = new RandomIndexWriter(random, dir);
     Document doc = new Document();
-    doc.add(new Field("field", "value", Store.NO, Index.ANALYZED));
+    doc.add(newField("field", "value", Store.NO, Index.ANALYZED));
     writer.addDocument(doc);
     IndexReader reader = writer.getReader();
     writer.close();
@@ -47,7 +43,7 @@ public class TestQueryWrapperFilter extends LuceneTestCase {
     // should not throw exception with primitive query
     QueryWrapperFilter qwf = new QueryWrapperFilter(termQuery);
 
-    IndexSearcher searcher = new IndexSearcher(reader);
+    IndexSearcher searcher = newSearcher(reader);
     TopDocs hits = searcher.search(new MatchAllDocsQuery(), qwf, 10);
     assertEquals(1, hits.totalHits);
     hits = searcher.search(new MatchAllDocsQuery(), new CachingWrapperFilter(qwf), 10);

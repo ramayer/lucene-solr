@@ -17,17 +17,16 @@ package org.apache.lucene.analysis.icu.segmentation;
  * limitations under the License.
  */
 
-import java.io.IOException;
-import java.io.Reader;
-import java.io.StringReader;
-
 import org.apache.lucene.analysis.Analyzer;
 import org.apache.lucene.analysis.BaseTokenStreamTestCase;
-import org.apache.lucene.analysis.util.ReusableAnalyzerBase;
 import org.apache.lucene.analysis.TokenFilter;
 import org.apache.lucene.analysis.Tokenizer;
 import org.apache.lucene.analysis.icu.ICUNormalizer2Filter;
+import org.apache.lucene.analysis.util.ReusableAnalyzerBase;
 
+import java.io.IOException;
+import java.io.Reader;
+import java.io.StringReader;
 import java.util.Arrays;
 
 public class TestICUTokenizer extends BaseTokenStreamTestCase {
@@ -129,11 +128,10 @@ public class TestICUTokenizer extends BaseTokenStreamTestCase {
   
   /*
    * For chinese, tokenize as char (these can later form bigrams or whatever)
-   * TODO: why do full-width numerics have no word-break prop?
    */
   public void testChinese() throws Exception {
     assertAnalyzesTo(a, "我是中国人。 １２３４ Ｔｅｓｔｓ ",
-        new String[] { "我", "是", "中", "国", "人", "tests"});
+        new String[] { "我", "是", "中", "国", "人", "1234", "tests"});
   }
   
   public void testEmpty() throws Exception {
@@ -220,6 +218,23 @@ public class TestICUTokenizer extends BaseTokenStreamTestCase {
   public void testTypes() throws Exception {
     assertAnalyzesTo(a, "David has 5000 bones", 
         new String[] {"david", "has", "5000", "bones"},
-        new String[] { "<WORD>", "<WORD>", "<NUM>", "<WORD>" });
+        new String[] { "<ALPHANUM>", "<ALPHANUM>", "<NUM>", "<ALPHANUM>" });
+  }
+  
+  public void testKorean() throws Exception {
+    BaseTokenStreamTestCase.assertAnalyzesTo(a, "훈민정음",
+        new String[] { "훈민정음" },
+        new String[] { "<HANGUL>" });
+  }
+  
+  public void testJapanese() throws Exception {
+    BaseTokenStreamTestCase.assertAnalyzesTo(a, "仮名遣い カタカナ",
+        new String[] { "仮", "名", "遣", "い", "カタカナ" },
+        new String[] { "<IDEOGRAPHIC>", "<IDEOGRAPHIC>", "<IDEOGRAPHIC>", "<HIRAGANA>", "<KATAKANA>" });
+  }
+  
+  /** blast some random strings through the analyzer */
+  public void testRandomStrings() throws Exception {
+    checkRandomData(random, a, 10000*RANDOM_MULTIPLIER);
   }
 }

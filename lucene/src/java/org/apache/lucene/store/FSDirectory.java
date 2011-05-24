@@ -22,18 +22,15 @@ import java.io.FileNotFoundException;
 import java.io.FilenameFilter;
 import java.io.IOException;
 import java.io.RandomAccessFile;
-import java.nio.channels.FileChannel;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 
 import java.util.Collection;
-import java.util.Collections;
 import static java.util.Collections.synchronizedSet;
 import java.util.HashSet;
 import java.util.Set;
 import java.util.concurrent.Future;
 
-import org.apache.lucene.store.SimpleFSDirectory.SimpleFSIndexInput;
 import org.apache.lucene.util.ThreadInterruptedException;
 import org.apache.lucene.util.Constants;
 
@@ -136,12 +133,6 @@ public abstract class FSDirectory extends Directory {
   protected final Set<String> staleFiles = synchronizedSet(new HashSet<String>()); // Files written, but not yet sync'ed
   private int chunkSize = DEFAULT_READ_CHUNK_SIZE; // LUCENE-1566
 
-  /**
-   * Chunk size used to read when using FileChannel API. If an attempt to read a
-   * large file is made without limiting the chunk size, an OOM may occur.
-   */
-  private static final long CHANNEL_CHUNK_SIZE = 1 << 21; // Use 2MB chunk size - LUCENE-2537
-
   // returns the canonical version of the directory, creating it if it doesn't exist.
   private static File getCanonicalPath(File file) throws IOException {
     return new File(file.getCanonicalPath());
@@ -164,7 +155,49 @@ public abstract class FSDirectory extends Directory {
       throw new NoSuchDirectoryException("file '" + directory + "' exists but is not a directory");
 
     setLockFactory(lockFactory);
-    
+  }
+
+  /** Creates an FSDirectory instance, trying to pick the
+   *  best implementation given the current environment.
+   *  The directory returned uses the {@link NativeFSLockFactory}.
+   *
+   *  <p>Currently this returns {@link MMapDirectory} for most Solaris
+   *  and Windows 64-bit JREs, {@link NIOFSDirectory} for other
+   *  non-Windows JREs, and {@link SimpleFSDirectory} for other
+   *  JREs on Windows. It is highly recommended that you consult the
+   *  implementation's documentation for your platform before
+   *  using this method.
+   *
+   * <p><b>NOTE</b>: this method may suddenly change which
+   * implementation is returned from release to release, in
+   * the event that higher performance defaults become
+   * possible; if the precise implementation is important to
+   * your application, please instantiate it directly,
+   * instead. For optimal performance you should consider using
+   * {@link MMapDirectory} on 64 bit JVMs.
+   *
+   * <p>See <a href="#subclasses">above</a> */
+  public static FSDirectory open(File path) throws IOException {
+    return open(path, null);
+  }
+
+  /** Just like {@link #open(File)}, but allows you to
+   *  also specify a custom {@link LockFactory}. */
+  public static FSDirectory open(File path, LockFactory lockFactory) throws IOException {
+    if ((Constants.WINDOWS || Constants.SUN_OS)
+          && Constants.JRE_IS_64BIT && MMapDirectory.UNMAP_SUPPORTED) {
+      return new MMapDirectory(path, lockFactory);
+    } else if (Constants.WINDOWS) {
+      return new SimpleFSDirectory(path, lockFactory);
+    } else {
+      return new NIOFSDirectory(path, lockFactory);
+    }
+  }
+
+  @Override
+  public void setLockFactory(LockFactory lockFactory) throws IOException {
+    super.setLockFactory(lockFactory);
+
     // for filesystem based LockFactory, delete the lockPrefix, if the locks are placed
     // in index dir. If no index dir is given, set ourselves
     if (lockFactory instanceof FSLockFactory) {
@@ -178,44 +211,9 @@ public abstract class FSDirectory extends Directory {
         lf.setLockPrefix(null);
       }
     }
-  }
 
-  /** Creates an FSDirectory instance, trying to pick the
-   *  best implementation given the current environment.
-   *  The directory returned uses the {@link NativeFSLockFactory}.
-   *
-   *  <p>Currently this returns {@link NIOFSDirectory}
-   *  on non-Windows JREs and {@link SimpleFSDirectory}
-   *  on Windows. It is highly recommended that you consult the
-   *  implementation's documentation for your platform before
-   *  using this method.
-   *
-   * <p><b>NOTE</b>: this method may suddenly change which
-   * implementation is returned from release to release, in
-   * the event that higher performance defaults become
-   * possible; if the precise implementation is important to
-   * your application, please instantiate it directly,
-   * instead. On 64 bit systems, it may also good to
-   * return {@link MMapDirectory}, but this is disabled
-   * because of officially missing unmap support in Java.
-   * For optimal performance you should consider using
-   * this implementation on 64 bit JVMs.
-   *
-   * <p>See <a href="#subclasses">above</a> */
-  public static FSDirectory open(File path) throws IOException {
-    return open(path, null);
   }
-
-  /** Just like {@link #open(File)}, but allows you to
-   *  also specify a custom {@link LockFactory}. */
-  public static FSDirectory open(File path, LockFactory lockFactory) throws IOException {
-    if (Constants.WINDOWS) {
-      return new SimpleFSDirectory(path, lockFactory);
-    } else {
-      return new NIOFSDirectory(path, lockFactory);
-    }
-  }
-
+  
   /** Lists all files (not subdirectories) in the
    *  directory.  This method never returns null (throws
    *  {@link IOException} instead).
@@ -274,14 +272,6 @@ public abstract class FSDirectory extends Directory {
     return file.lastModified();
   }
 
-  /** Set the modified time of an existing file to now. */
-  @Override
-  public void touchFile(String name) {
-    ensureOpen();
-    File file = new File(directory, name);
-    file.setLastModified(System.currentTimeMillis());
-  }
-
   /** Returns the length in bytes of a file in the directory. */
   @Override
   public long fileLength(String name) throws IOException {
@@ -326,12 +316,6 @@ public abstract class FSDirectory extends Directory {
 
   protected void onIndexOutputClosed(FSIndexOutput io) {
     staleFiles.add(io.name);
-  }
-
-  @Deprecated
-  @Override
-  public void sync(String name) throws IOException {
-    sync(Collections.singleton(name));
   }
 
   @Override
@@ -390,12 +374,6 @@ public abstract class FSDirectory extends Directory {
     isOpen = false;
   }
 
-  /** @deprecated Use {@link #getDirectory} instead. */
-  @Deprecated
-  public File getFile() {
-    return getDirectory();
-  }
-
   /** @return the underlying filesystem directory */
   public File getDirectory() {
     ensureOpen();
@@ -405,7 +383,7 @@ public abstract class FSDirectory extends Directory {
   /** For debug output. */
   @Override
   public String toString() {
-    return this.getClass().getName() + "@" + directory;
+    return this.getClass().getName() + "@" + directory + " lockFactory=" + getLockFactory();
   }
 
   /**
@@ -467,46 +445,6 @@ public abstract class FSDirectory extends Directory {
     @Override
     public void flushBuffer(byte[] b, int offset, int size) throws IOException {
       file.write(b, offset, size);
-    }
-
-    @Override
-    public void copyBytes(DataInput input, long numBytes) throws IOException {
-      // Optimized copy only if the number of bytes to copy is larger than the
-      // buffer size, and the given IndexInput supports FileChannel copying.
-      // NOTE: the below check relies on NIOIndexInput extending Simple. If that
-      // changes in the future, we should change the check as well.
-      if (numBytes <= BUFFER_SIZE || !(input instanceof SimpleFSIndexInput)) {
-        super.copyBytes(input, numBytes);
-        return;
-      }
-
-      SimpleFSIndexInput fsInput = (SimpleFSIndexInput) input;
-
-      // flush any bytes in the input's buffer.
-      numBytes -= fsInput.flushBuffer(this, numBytes);
-      
-      // flush any bytes in the buffer
-      flush();
-      
-      // do the optimized copy
-      FileChannel in = fsInput.file.getChannel();
-
-      // Necessary because BufferedIndexInput does lazy seeking:
-      in.position(fsInput.getFilePointer());
-
-      FileChannel out = file.getChannel();
-      long pos = out.position();
-      long writeTo = numBytes + pos;
-      while (pos < writeTo) {
-        pos += out.transferFrom(in, pos, Math.min(CHANNEL_CHUNK_SIZE, writeTo - pos));
-      }
-      // transferFrom does not change the position of the channel. Need to change it manually
-      out.position(pos);
-      
-      // corrects the position in super (BufferedIndexOutput), so that calls
-      // to getFilePointer will return the correct pointer.
-      // Perhaps a specific method is better?
-      super.seek(out.position());
     }
     
     @Override

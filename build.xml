@@ -18,7 +18,8 @@
  -->
 
 <project name="lucene-solr" default="test" basedir=".">
-  <target name="test" description="Test both Lucene and Solr">
+  <import file="common-build.xml"/>
+  <target name="test" description="Test both Lucene and Solr" depends="validate">
     <sequential>
       <subant target="test" inheritall="false" failonerror="true">
         <fileset dir="lucene" includes="build.xml" />
@@ -27,9 +28,16 @@
       </subant>
     </sequential>
   </target>
-
+  <target name="validate" description="Validate dependencies, licenses, etc.">
+    <sequential><subant target="validate" inheritall="false" failonerror="true">
+        <fileset dir="lucene" includes="build.xml" />
+        <fileset dir="modules" includes="build.xml" />
+        <fileset dir="solr" includes="build.xml" />
+      </subant></sequential>
+  </target>
   <target name="compile" description="Compile Lucene and Solr">
     <sequential>
+
       <subant target="compile" inheritall="false" failonerror="true">
         <fileset dir="lucene" includes="build.xml" />
         <fileset dir="modules" includes="build.xml" />
@@ -38,10 +46,25 @@
     </sequential>
   </target>
 
-  <!-- run with -Dmaven.dist.dir=maven to put all the artifacts in one place -->
+  <property name="version" value="4.0-SNAPSHOT"/>
+  <target name="get-maven-poms" 
+          description="Copy Maven POMs from dev-tools/maven/ to their target locations">
+    <copy todir="." overwrite="true">
+      <fileset dir="${basedir}/dev-tools/maven"/>
+      <filterset begintoken="@" endtoken="@">
+        <filter token="version" value="${version}"/>
+      </filterset>
+      <globmapper from="*.template" to="*"/>
+    </copy>
+  </target>
+
   <target name="generate-maven-artifacts" description="Generate Maven Artifacts for Lucene and Solr">
+    <property name="maven.dist.dir"  location="dist/maven" />
+    <mkdir dir="${maven.dist.dir}" />
+
     <sequential>
       <subant target="generate-maven-artifacts" inheritall="false" failonerror="true">
+        <property name="maven.dist.dir"  location="${maven.dist.dir}" />
         <fileset dir="lucene" includes="build.xml" />
         <fileset dir="modules" includes="build.xml" />
         <fileset dir="solr" includes="build.xml" />
@@ -49,7 +72,38 @@
     </sequential>
   </target>
 
+  <target name="eclipse" description="Setup Eclipse configuration">
+    <copy file="dev-tools/eclipse/dot.classpath" tofile=".classpath" overwrite="true"/>
+    <mkdir dir=".settings"/>
+    <copy file="dev-tools/eclipse/resources.prefs" 
+          tofile=".settings/org.eclipse.core.resources.prefs" overwrite="true"/>
+    <echo>
+      SUCCESS: You must right-click your project and choose Refresh
+      Please note, your project must use a Java 6 JRE
+    </echo>
+  </target>
+
+  <target name="idea" description="Setup IntelliJ IDEA configuration">
+    <copy todir=".">
+      <fileset dir="dev-tools/idea"/>
+    </copy>
+    <echo>
+      To complete IntelliJ IDEA setup, you must manually configure
+      Project Structure | Project | Project SDK.
+    </echo>
+  </target>
+  <target name="clean-idea"
+          description="Removes all IntelliJ IDEA configuration files">
+    <delete dir=".idea" failonerror="true"/>
+    <delete failonerror="true">
+      <fileset dir="." includes="*.iml,*.ipr,*.iws"/>
+      <fileset dir="solr" includes="**/*.iml"/>
+      <fileset dir="lucene" includes="**/*.iml"/>
+    </delete>
+  </target>
+
   <target name="clean" description="Clean Lucene and Solr">
+    <delete dir="dist" />
     <sequential>
       <subant target="clean" inheritall="false" failonerror="true">
         <fileset dir="lucene" includes="build.xml" />

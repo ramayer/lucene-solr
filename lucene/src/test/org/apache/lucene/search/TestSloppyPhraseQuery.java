@@ -17,8 +17,6 @@ package org.apache.lucene.search;
  * limitations under the License.
  */
 
-import java.util.Random;
-
 import org.apache.lucene.util.LuceneTestCase;
 import org.apache.lucene.analysis.MockAnalyzer;
 import org.apache.lucene.analysis.MockTokenizer;
@@ -47,14 +45,6 @@ public class TestSloppyPhraseQuery extends LuceneTestCase {
   private static final PhraseQuery QUERY_1 = makePhraseQuery( S_1 );
   private static final PhraseQuery QUERY_2 = makePhraseQuery( S_2 );
   private static final PhraseQuery QUERY_4 = makePhraseQuery( "X A A");
-
-  private Random random;
-  
-  @Override
-  public void setUp() throws Exception {
-    super.setUp();
-    random = newRandom();
-  }
 
   /**
    * Test DOC_4 and QUERY_4.
@@ -125,13 +115,13 @@ public class TestSloppyPhraseQuery extends LuceneTestCase {
   private float  checkPhraseQuery(Document doc, PhraseQuery query, int slop, int expectedNumResults) throws Exception {
     query.setSlop(slop);
 
-    Directory ramDir = newDirectory(random);
-    RandomIndexWriter writer = new RandomIndexWriter(random, ramDir, new MockAnalyzer(MockTokenizer.WHITESPACE, false));
+    Directory ramDir = newDirectory();
+    RandomIndexWriter writer = new RandomIndexWriter(random, ramDir, new MockAnalyzer(random, MockTokenizer.WHITESPACE, false));
     writer.addDocument(doc);
 
     IndexReader reader = writer.getReader();
 
-    IndexSearcher searcher = new IndexSearcher(reader);
+    IndexSearcher searcher = newSearcher(reader);
     TopDocs td = searcher.search(query,null,10);
     //System.out.println("slop: "+slop+"  query: "+query+"  doc: "+doc+"  Expecting number of hits: "+expectedNumResults+" maxScore="+td.getMaxScore());
     assertEquals("slop: "+slop+"  query: "+query+"  doc: "+doc+"  Wrong number of hits", expectedNumResults, td.totalHits);

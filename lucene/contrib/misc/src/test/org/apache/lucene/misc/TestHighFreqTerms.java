@@ -17,17 +17,18 @@ package org.apache.lucene.misc;
  * limitations under the License.
  */
 
-import java.util.Random;
-
-import org.apache.lucene.index.IndexReader;
-import org.apache.lucene.index.IndexWriter;
-import org.apache.lucene.util.BytesRef;
-import org.apache.lucene.util.LuceneTestCase;
-import org.apache.lucene.store.Directory;
 import org.apache.lucene.analysis.MockAnalyzer;
 import org.apache.lucene.analysis.MockTokenizer;
 import org.apache.lucene.document.Document;
 import org.apache.lucene.document.Field;
+import org.apache.lucene.index.IndexReader;
+import org.apache.lucene.index.IndexWriter;
+import org.apache.lucene.store.Directory;
+import org.apache.lucene.util.BytesRef;
+import org.apache.lucene.util.LuceneTestCase;
+import org.apache.lucene.util._TestUtil;
+import org.junit.AfterClass;
+import org.junit.BeforeClass;
 
 public class TestHighFreqTerms extends LuceneTestCase {
  
@@ -35,59 +36,62 @@ public class TestHighFreqTerms extends LuceneTestCase {
   private static Directory dir = null;
   private static IndexReader reader =null;
   
-  public void setUp() throws Exception {
-  	super.setUp();
-  	Random random = newRandom();
-    dir= newDirectory(random);
+  @BeforeClass
+  public static void setUpClass() throws Exception {
+    dir = newDirectory();
     writer = new IndexWriter(dir, newIndexWriterConfig(random,
-       TEST_VERSION_CURRENT, new MockAnalyzer(MockTokenizer.WHITESPACE, false))
+       TEST_VERSION_CURRENT, new MockAnalyzer(random, MockTokenizer.WHITESPACE, false))
        .setMaxBufferedDocs(2));
+    writer.setInfoStream(VERBOSE ? System.out : null);
     indexDocs(writer);
     reader = IndexReader.open(dir, true);
+    _TestUtil.checkIndex(dir);
   }
   
-  public void tearDown() throws Exception{
+  @AfterClass
+  public static void tearDownClass() throws Exception{
     reader.close();
     dir.close();
-    super.tearDown();
+    dir = null;
+    reader = null;
   }
 /******************** Tests for getHighFreqTerms **********************************/
   
   // test without specifying field (i.e. if we pass in field=null it should examine all fields)
   // the term "diff" in the field "different_field" occurs 20 times and is the highest df term
-  public static void testFirstTermHighestDocFreqAllFields () throws Exception{
+  public void testFirstTermHighestDocFreqAllFields () throws Exception{
     int numTerms = 12;
     String field =null;
     TermStats[] terms = HighFreqTerms.getHighFreqTerms(reader, numTerms, field);
     assertEquals("Term with highest docfreq is first", 20,terms[0].docFreq );
   }
   
-  public static void testFirstTermHighestDocFreq () throws Exception{
+  public void testFirstTermHighestDocFreq () throws Exception{
     int numTerms = 12;
     String field="FIELD_1";
     TermStats[] terms = HighFreqTerms.getHighFreqTerms(reader, numTerms, field);
     assertEquals("Term with highest docfreq is first", 10,terms[0].docFreq );
   }
 
-  public static void testOrderedByDocFreqDescending () throws Exception{
+  public void testOrderedByDocFreqDescending () throws Exception{
     int numTerms = 12;
     String field="FIELD_1";
     TermStats[] terms = HighFreqTerms.getHighFreqTerms(reader, numTerms, field);
     for (int i = 0; i < terms.length; i++) {
-      if (i >0){
-       assertTrue ("out of order " + terms[i-1].docFreq + "should be >= " + terms[i].docFreq,terms[i-1].docFreq >= terms[i].docFreq);
+      if (i > 0) {
+        assertTrue ("out of order " + terms[i-1].docFreq + "should be >= " + terms[i].docFreq,terms[i-1].docFreq >= terms[i].docFreq);
       }
     }    
   }
   
-  public static void testNumTerms () throws Exception{
+  public void testNumTerms () throws Exception{
     int numTerms = 12;
     String field = null;
     TermStats[] terms = HighFreqTerms.getHighFreqTerms(reader, numTerms, field);
     assertEquals("length of terms array equals numTerms :" + numTerms, numTerms, terms.length);
   }
     
-  public static void testGetHighFreqTerms () throws Exception{
+  public void testGetHighFreqTerms () throws Exception{
     int numTerms=12;
     String field="FIELD_1";
     TermStats[] terms = HighFreqTerms.getHighFreqTerms(reader, numTerms, field);
@@ -111,7 +115,7 @@ public class TestHighFreqTerms extends LuceneTestCase {
   
   /********************Test sortByTotalTermFreq**********************************/
   
-  public static void testFirstTermHighestTotalTermFreq () throws Exception{
+  public void testFirstTermHighestTotalTermFreq () throws Exception{
     int numTerms = 20;
     String field = null;
     TermStats[] terms = HighFreqTerms.getHighFreqTerms(reader, numTerms, field);
@@ -119,7 +123,7 @@ public class TestHighFreqTerms extends LuceneTestCase {
     assertEquals("Term with highest totalTermFreq is first",200, termsWithTotalTermFreq[0].totalTermFreq);
   }
 
-  public static void testFirstTermHighestTotalTermFreqDifferentField () throws Exception{
+  public void testFirstTermHighestTotalTermFreqDifferentField () throws Exception{
     int numTerms = 20;
     String field = "different_field";
     TermStats[] terms = HighFreqTerms.getHighFreqTerms(reader, numTerms, field);
@@ -127,21 +131,22 @@ public class TestHighFreqTerms extends LuceneTestCase {
     assertEquals("Term with highest totalTermFreq is first"+ termsWithTotalTermFreq[0].getTermText(),150, termsWithTotalTermFreq[0].totalTermFreq);
   }
   
-  public static void testOrderedByTermFreqDescending () throws Exception{
+  public void testOrderedByTermFreqDescending () throws Exception{
     int numTerms = 12;
     String field = "FIELD_1";
     TermStats[] terms = HighFreqTerms.getHighFreqTerms(reader, numTerms, field);
     TermStats[] termsWithTF = HighFreqTerms.sortByTotalTermFreq(reader, terms);
  
-  for (int i = 0; i < termsWithTF.length; i++) {
-    // check that they are sorted by descending termfreq order
-    if (i >0){
-      assertTrue ("out of order" +termsWithTF[i-1]+ " > " +termsWithTF[i],termsWithTF[i-1].totalTermFreq > termsWithTF[i].totalTermFreq);
-     }
+    for (int i = 0; i < termsWithTF.length; i++) {
+      // check that they are sorted by descending termfreq
+      // order
+      if (i > 0) {
+        assertTrue ("out of order" +termsWithTF[i-1]+ " > " +termsWithTF[i],termsWithTF[i-1].totalTermFreq >= termsWithTF[i].totalTermFreq);
+      }
     } 
   }
   
-  public static void testGetTermFreqOrdered () throws Exception{
+  public void testGetTermFreqOrdered () throws Exception{
     int numTerms = 12;
     String field = "FIELD_1";
     TermStats[] terms = HighFreqTerms.getHighFreqTerms(reader, numTerms, field);
@@ -166,27 +171,24 @@ public class TestHighFreqTerms extends LuceneTestCase {
                      termsWithTF[i].totalTermFreq);
       }
     }
-    reader.close();
   }
     
   /********************Tests for getTotalTermFreq**********************************/
     
-  public static void testGetTotalTermFreq() throws Exception{
+  public void testGetTotalTermFreq() throws Exception{
     String term ="highTF";
     BytesRef termtext = new BytesRef (term);
     String field = "FIELD_1";
     long totalTermFreq = HighFreqTerms.getTotalTermFreq(reader, field, termtext);
-    reader.close();
     assertEquals("highTf tf should be 200",200,totalTermFreq);
     
   }
     
-  public static void testGetTotalTermFreqBadTerm() throws Exception{
+  public void testGetTotalTermFreqBadTerm() throws Exception{
     String term ="foobar";
     BytesRef termtext = new BytesRef (term);
     String field = "FIELD_1";
     long totalTermFreq = HighFreqTerms.getTotalTermFreq(reader, field, termtext);
-    reader.close();
     assertEquals("totalTermFreq should be 0 for term not in index",0,totalTermFreq);
     
   }
@@ -201,9 +203,9 @@ public class TestHighFreqTerms extends LuceneTestCase {
       Document doc = new Document();
       String content = getContent(i);
     
-      doc.add(new Field("FIELD_1", content, Field.Store.YES,Field.Index.ANALYZED, Field.TermVector.NO));
+      doc.add(newField(random, "FIELD_1", content, Field.Store.YES,Field.Index.ANALYZED, Field.TermVector.NO));
       //add a different field
-      doc.add(new Field("different_field", "diff", Field.Store.YES, Field.Index.ANALYZED, Field.TermVector.NO));
+      doc.add(newField(random, "different_field", "diff", Field.Store.YES, Field.Index.ANALYZED, Field.TermVector.NO));
       writer.addDocument(doc);
     }
     
@@ -211,7 +213,7 @@ public class TestHighFreqTerms extends LuceneTestCase {
     //highest freq terms for a specific field.
     for (int i = 1; i <= 10; i++) {
       Document doc = new Document();
-      doc.add(new Field("different_field", "diff", Field.Store.YES, Field.Index.ANALYZED, Field.TermVector.NO));
+      doc.add(newField(random, "different_field", "diff", Field.Store.YES, Field.Index.ANALYZED, Field.TermVector.NO));
       writer.addDocument(doc);
     }
     // add some docs where tf < df so we can see if sorting works
@@ -222,7 +224,7 @@ public class TestHighFreqTerms extends LuceneTestCase {
     for (int i = 0; i < highTF; i++) {
       content += "highTF ";
     }
-    doc.add(new Field("FIELD_1", content, Field.Store.YES, Field.Index.ANALYZED, Field.TermVector.NO));
+    doc.add(newField(random, "FIELD_1", content, Field.Store.YES, Field.Index.ANALYZED, Field.TermVector.NO));
     writer.addDocument(doc);
     // highTF medium df =5
     int medium_df = 5;
@@ -233,7 +235,7 @@ public class TestHighFreqTerms extends LuceneTestCase {
       for (int j = 0; j < tf; j++) {
         newcontent += "highTFmedDF ";
       }
-      newdoc.add(new Field("FIELD_1", newcontent, Field.Store.YES, Field.Index.ANALYZED, Field.TermVector.NO));
+      newdoc.add(newField(random, "FIELD_1", newcontent, Field.Store.YES, Field.Index.ANALYZED, Field.TermVector.NO));
       writer.addDocument(newdoc);
     }
     // add a doc with high tf in field different_field
@@ -243,7 +245,7 @@ public class TestHighFreqTerms extends LuceneTestCase {
     for (int i = 0; i < targetTF; i++) {
       content += "TF150 ";
     }
-    doc.add(new Field("different_field", content, Field.Store.YES, Field.Index.ANALYZED, Field.TermVector.NO));
+    doc.add(newField(random, "different_field", content, Field.Store.YES, Field.Index.ANALYZED, Field.TermVector.NO));
     writer.addDocument(doc);
     writer.close();
     

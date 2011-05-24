@@ -18,15 +18,18 @@ package org.apache.lucene.index;
  */
 
 import java.io.IOException;
-import java.util.Random;
+import java.io.Reader;
 
+import org.apache.lucene.analysis.Analyzer;
 import org.apache.lucene.analysis.MockAnalyzer;
+import org.apache.lucene.analysis.MockTokenizer;
+import org.apache.lucene.analysis.TokenStream;
 import org.apache.lucene.document.Document;
+import org.apache.lucene.index.codecs.CodecProvider;
 import org.apache.lucene.document.Field;
 import org.apache.lucene.search.IndexSearcher;
 import org.apache.lucene.search.PhraseQuery;
 import org.apache.lucene.search.ScoreDoc;
-import org.apache.lucene.search.Searcher;
 import org.apache.lucene.store.Directory;
 import org.apache.lucene.store.IndexInput;
 import org.apache.lucene.store.MockDirectoryWrapper;
@@ -39,7 +42,7 @@ import org.apache.lucene.util.BytesRef;
  *
  */
 public class TestLazyProxSkipping extends LuceneTestCase {
-    private Searcher searcher;
+    private IndexSearcher searcher;
     private int seeksCounter = 0;
     
     private String field = "tokens";
@@ -49,7 +52,7 @@ public class TestLazyProxSkipping extends LuceneTestCase {
 
     private class SeekCountingDirectory extends MockDirectoryWrapper {
       public SeekCountingDirectory(Directory delegate) {
-        super(delegate);
+        super(random, delegate);
       }
 
       @Override
@@ -64,13 +67,23 @@ public class TestLazyProxSkipping extends LuceneTestCase {
       
     }
     
-    private void createIndex(Random random, int numHits) throws IOException {
+    private void createIndex(int numHits) throws IOException {
         int numDocs = 500;
         
+        final Analyzer analyzer = new Analyzer() {
+          @Override
+          public TokenStream tokenStream(String fieldName, Reader reader) {
+            return new MockTokenizer(reader, MockTokenizer.WHITESPACE, true);
+          }
+        };
         Directory directory = new SeekCountingDirectory(new RAMDirectory());
-        IndexWriter writer = new IndexWriter(directory, newIndexWriterConfig(random, TEST_VERSION_CURRENT, new MockAnalyzer()).setMaxBufferedDocs(10));
-        ((LogMergePolicy) writer.getConfig().getMergePolicy()).setUseCompoundFile(false);
-        ((LogMergePolicy) writer.getConfig().getMergePolicy()).setUseCompoundDocStore(false);
+        // note: test explicitly disables payloads
+        IndexWriter writer = new IndexWriter(
+            directory,
+            newIndexWriterConfig(TEST_VERSION_CURRENT, analyzer).
+                setMaxBufferedDocs(10).
+                setMergePolicy(newLogMergePolicy(false))
+        );
         for (int i = 0; i < numDocs; i++) {
             Document doc = new Document();
             String content;
@@ -85,17 +98,17 @@ public class TestLazyProxSkipping extends LuceneTestCase {
                 content = this.term3 + " " + this.term2;
             }
 
-            doc.add(new Field(this.field, content, Field.Store.YES, Field.Index.ANALYZED));
+            doc.add(newField(this.field, content, Field.Store.YES, Field.Index.ANALYZED));
             writer.addDocument(doc);
         }
         
         // make sure the index has only a single segment
         writer.optimize();
         writer.close();
-        
-        SegmentReader reader = SegmentReader.getOnlySegmentReader(directory);
 
-        this.searcher = new IndexSearcher(reader);        
+      SegmentReader reader = getOnlySegmentReader(IndexReader.open(directory, false));
+
+      this.searcher = newSearcher(reader);
     }
     
     private ScoreDoc[] search() throws IOException {
@@ -106,8 +119,8 @@ public class TestLazyProxSkipping extends LuceneTestCase {
         return this.searcher.search(pq, null, 1000).scoreDocs;        
     }
     
-    private void performTest(Random random, int numHits) throws IOException {
-        createIndex(random, numHits);
+    private void performTest(int numHits) throws IOException {
+        createIndex(numHits);
         this.seeksCounter = 0;
         ScoreDoc[] hits = search();
         // verify that the right number of docs was found
@@ -117,21 +130,23 @@ public class TestLazyProxSkipping extends LuceneTestCase {
         assertTrue(this.seeksCounter > 0);
         assertTrue("seeksCounter=" + this.seeksCounter + " numHits=" + numHits, this.seeksCounter <= numHits + 1);
     }
-    
+ 
     public void testLazySkipping() throws IOException {
-        // test whether only the minimum amount of seeks() are performed
-        Random random = newRandom();
-        performTest(random, 5);
-        performTest(random, 10);
+        assumeFalse("This test cannot run with SimpleText codec", CodecProvider.getDefault().getFieldCodec(this.field).equals("SimpleText"));
+        // test whether only the minimum amount of seeks()
+        // are performed
+        performTest(5);
+        searcher.close();
+        performTest(10);
+        searcher.close();
     }
     
     public void testSeek() throws IOException {
-        Random random = newRandom();
-        Directory directory = newDirectory(random);
-        IndexWriter writer = new IndexWriter(directory, newIndexWriterConfig(random, TEST_VERSION_CURRENT, new MockAnalyzer()));
+        Directory directory = newDirectory();
+        IndexWriter writer = new IndexWriter(directory, newIndexWriterConfig( TEST_VERSION_CURRENT, new MockAnalyzer(random)));
         for (int i = 0; i < 10; i++) {
             Document doc = new Document();
-            doc.add(new Field(this.field, "a b", Field.Store.YES, Field.Index.ANALYZED));
+            doc.add(newField(this.field, "a b", Field.Store.YES, Field.Index.ANALYZED));
             writer.addDocument(doc);
         }
         

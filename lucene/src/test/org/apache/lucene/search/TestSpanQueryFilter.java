@@ -17,45 +17,43 @@ package org.apache.lucene.search;
  */
 
 import java.util.List;
-import java.util.Random;
 
+import org.apache.lucene.analysis.MockAnalyzer;
 import org.apache.lucene.document.Document;
 import org.apache.lucene.document.Field;
+import org.apache.lucene.index.IndexReader.AtomicReaderContext;
 import org.apache.lucene.index.IndexReader;
 import org.apache.lucene.index.RandomIndexWriter;
-import org.apache.lucene.index.SlowMultiReaderWrapper;
 import org.apache.lucene.index.Term;
 import org.apache.lucene.search.spans.SpanTermQuery;
 import org.apache.lucene.store.Directory;
 import org.apache.lucene.util.English;
 import org.apache.lucene.util.LuceneTestCase;
+import org.apache.lucene.util.ReaderUtil;
 
 public class TestSpanQueryFilter extends LuceneTestCase {
 
-
-  public TestSpanQueryFilter(String s) {
-    super(s);
-  }
-
   public void testFilterWorks() throws Exception {
-    Random random = newRandom();
-    Directory dir = newDirectory(random);
-    RandomIndexWriter writer = new RandomIndexWriter(random, dir);
+    Directory dir = newDirectory();
+    RandomIndexWriter writer = new RandomIndexWriter(random, dir, newIndexWriterConfig(TEST_VERSION_CURRENT, new MockAnalyzer(random)).setMergePolicy(newLogMergePolicy()));
     for (int i = 0; i < 500; i++) {
       Document document = new Document();
-      document.add(new Field("field", English.intToEnglish(i) + " equals " + English.intToEnglish(i),
+      document.add(newField("field", English.intToEnglish(i) + " equals " + English.intToEnglish(i),
               Field.Store.NO, Field.Index.ANALYZED));
       writer.addDocument(document);
     }
-    IndexReader reader = writer.getReader();
+    final int number = 10;
+    IndexReader reader = writer.getReader(); 
     writer.close();
-
-    SpanTermQuery query = new SpanTermQuery(new Term("field", English.intToEnglish(10).trim()));
+    AtomicReaderContext[] leaves = ReaderUtil.leaves(reader.getTopReaderContext());
+    int subIndex = ReaderUtil.subIndex(number, leaves); // find the reader with this document in it
+    
+    SpanTermQuery query = new SpanTermQuery(new Term("field", English.intToEnglish(number).trim()));
     SpanQueryFilter filter = new SpanQueryFilter(query);
-    SpanFilterResult result = filter.bitSpans(SlowMultiReaderWrapper.wrap(reader));
+    SpanFilterResult result = filter.bitSpans(leaves[subIndex]);
     DocIdSet docIdSet = result.getDocIdSet();
     assertTrue("docIdSet is null and it shouldn't be", docIdSet != null);
-    assertContainsDocId("docIdSet doesn't contain docId 10", docIdSet, 10);
+    assertContainsDocId("docIdSet doesn't contain docId 10", docIdSet, number);
     List<SpanFilterResult.PositionInfo> spans = result.getPositions();
     assertTrue("spans is null and it shouldn't be", spans != null);
     int size = getDocIdSetSize(docIdSet);
@@ -67,6 +65,7 @@ public class TestSpanQueryFilter extends LuceneTestCase {
       //There should be two positions in each
       assertTrue("info.getPositions() Size: " + info.getPositions().size() + " is not: " + 2, info.getPositions().size() == 2);
     }
+    
     reader.close();
     dir.close();
   }

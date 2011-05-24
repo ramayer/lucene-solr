@@ -27,24 +27,24 @@ import org.apache.lucene.document.*;
 
 import java.util.Random;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.io.IOException;
 
 public class TestThreadSafe extends LuceneTestCase {
-  Random r;
   Directory dir1;
 
   IndexReader ir1;
 
-  String failure=null;
-
-
   class Thr extends Thread {
     final int iter;
     final Random rand;
+    final AtomicBoolean failed;
+
     // pass in random in case we want to make things reproducable
-    public Thr(int iter, Random rand) {
+    public Thr(int iter, Random rand, AtomicBoolean failed) {
       this.iter = iter;
       this.rand = rand;
+      this.failed = failed;
     }
 
     @Override
@@ -62,8 +62,8 @@ public class TestThreadSafe extends LuceneTestCase {
 
         }
       } catch (Throwable th) {
-        failure=th.toString();
-        fail(failure);
+        failed.set(true);
+        throw new RuntimeException(th);
       }
     }
 
@@ -104,18 +104,18 @@ public class TestThreadSafe extends LuceneTestCase {
 
   void buildDir(Directory dir, int nDocs, int maxFields, int maxFieldLen) throws IOException {
     IndexWriter iw = new IndexWriter(dir, new IndexWriterConfig(
-        TEST_VERSION_CURRENT, new MockAnalyzer()).setOpenMode(OpenMode.CREATE).setMaxBufferedDocs(10));
+        TEST_VERSION_CURRENT, new MockAnalyzer(random)).setOpenMode(OpenMode.CREATE).setMaxBufferedDocs(10));
     for (int j=0; j<nDocs; j++) {
       Document d = new Document();
-      int nFields = r.nextInt(maxFields);
+      int nFields = random.nextInt(maxFields);
       for (int i=0; i<nFields; i++) {
-        int flen = r.nextInt(maxFieldLen);
+        int flen = random.nextInt(maxFieldLen);
         StringBuilder sb = new StringBuilder("^ ");
-        while (sb.length() < flen) sb.append(' ').append(words[r.nextInt(words.length)]);
+        while (sb.length() < flen) sb.append(' ').append(words[random.nextInt(words.length)]);
         sb.append(" $");
         Field.Store store = Field.Store.YES;  // make random later
         Field.Index index = Field.Index.ANALYZED;  // make random later
-        d.add(new Field("f"+i, sb.toString(), store, index));
+        d.add(newField("f"+i, sb.toString(), store, index));
       }
       iw.addDocument(d);
     }
@@ -125,29 +125,27 @@ public class TestThreadSafe extends LuceneTestCase {
 
   void doTest(int iter, int nThreads) throws Exception {
     Thr[] tarr = new Thr[nThreads];
+    AtomicBoolean failed = new AtomicBoolean();
     for (int i=0; i<nThreads; i++) {
-      tarr[i] = new Thr(iter, new Random(r.nextLong()));
+      tarr[i] = new Thr(iter, new Random(random.nextLong()), failed);
       tarr[i].start();
     }
     for (int i=0; i<nThreads; i++) {
       tarr[i].join();
     }
-    if (failure!=null) {
-      fail(failure);
-    }
+    assertFalse(failed.get());
   }
 
   public void testLazyLoadThreadSafety() throws Exception{
-    r = newRandom();
-    dir1 = newDirectory(r);
+    dir1 = newDirectory();
     // test w/ field sizes bigger than the buffer of an index input
     buildDir(dir1, 15, 5, 2000);
 
     // do many small tests so the thread locals go away inbetween
-    int num = 100 * RANDOM_MULTIPLIER;
+    int num = 10 * RANDOM_MULTIPLIER;
     for (int i = 0; i < num; i++) {
       ir1 = IndexReader.open(dir1, false);
-      doTest(10,100);
+      doTest(10,10);
       ir1.close();
     }
     dir1.close();

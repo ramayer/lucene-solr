@@ -18,6 +18,11 @@
 package org.apache.solr.search.function;
 
 import org.apache.lucene.index.IndexReader;
+import org.apache.lucene.index.IndexReader.AtomicReaderContext;
+import org.apache.lucene.search.FieldCache;
+import org.apache.lucene.util.ReaderUtil;
+import org.apache.solr.search.MutableValue;
+import org.apache.solr.search.MutableValueInt;
 
 import java.io.IOException;
 import java.util.Map;
@@ -47,49 +52,66 @@ public class OrdFieldSource extends ValueSource {
     this.field = field;
   }
 
+  @Override
   public String description() {
     return "ord(" + field + ')';
   }
 
 
-  public DocValues getValues(Map context, IndexReader reader) throws IOException {
-    return new StringIndexDocValues(this, reader, field) {
+  @Override
+  public DocValues getValues(Map context, AtomicReaderContext readerContext) throws IOException {
+    final int off = readerContext.docBase;
+    final IndexReader topReader = ReaderUtil.getTopLevelContext(readerContext).reader;
+    final FieldCache.DocTermsIndex sindex = FieldCache.DEFAULT.getTermsIndex(topReader, field);
+    return new IntDocValues(this) {
       protected String toTerm(String readableValue) {
         return readableValue;
       }
-      
-      public float floatVal(int doc) {
-        return (float)termsIndex.getOrd(doc);
-      }
-
+      @Override
       public int intVal(int doc) {
-        return termsIndex.getOrd(doc);
+        return sindex.getOrd(doc+off);
+      }
+      @Override
+      public int ordVal(int doc) {
+        return sindex.getOrd(doc+off);
+      }
+      @Override
+      public int numOrd() {
+        return sindex.numOrd();
       }
 
-      public long longVal(int doc) {
-        return (long)termsIndex.getOrd(doc);
+      @Override
+      public boolean exists(int doc) {
+        return sindex.getOrd(doc+off) != 0;
       }
 
-      public double doubleVal(int doc) {
-        return (double)termsIndex.getOrd(doc);
-      }
+      @Override
+      public ValueFiller getValueFiller() {
+        return new ValueFiller() {
+          private final MutableValueInt mval = new MutableValueInt();
 
-      public String strVal(int doc) {
-        // the string value of the ordinal, not the string itself
-        return Integer.toString(termsIndex.getOrd(doc));
-      }
+          @Override
+          public MutableValue getValue() {
+            return mval;
+          }
 
-      public String toString(int doc) {
-        return description() + '=' + intVal(doc);
+          @Override
+          public void fillValue(int doc) {
+            mval.value = sindex.getOrd(doc);
+            mval.exists = mval.value!=0;
+          }
+        };
       }
     };
   }
 
+  @Override
   public boolean equals(Object o) {
     return o.getClass() == OrdFieldSource.class && this.field.equals(((OrdFieldSource)o).field);
   }
 
   private static final int hcode = OrdFieldSource.class.hashCode();
+  @Override
   public int hashCode() {
     return hcode + field.hashCode();
   };

@@ -20,7 +20,6 @@ package org.apache.lucene.xmlparser.builders;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
-import java.util.Random;
 
 import javax.xml.parsers.DocumentBuilder;
 import javax.xml.parsers.DocumentBuilderFactory;
@@ -29,8 +28,9 @@ import javax.xml.parsers.ParserConfigurationException;
 import org.apache.lucene.util.LuceneTestCase;
 
 import org.apache.lucene.index.IndexReader;
+import org.apache.lucene.index.IndexReader.AtomicReaderContext;
 import org.apache.lucene.index.IndexWriter;
-import org.apache.lucene.index.IndexWriter.MaxFieldLength;
+import org.apache.lucene.index.SlowMultiReaderWrapper;
 import org.apache.lucene.search.Filter;
 import org.apache.lucene.search.NumericRangeFilter;
 import org.apache.lucene.store.Directory;
@@ -61,16 +61,15 @@ public class TestNumericRangeFilterBuilder extends LuceneTestCase {
 		String xml = "<NumericRangeFilter fieldName='AGE' type='int' lowerTerm='-1' upperTerm='NaN'/>";
 		Document doc = getDocumentFromString(xml);
 		Filter filter = filterBuilder.getFilter(doc.getDocumentElement());
-		Random random = newRandom();
-		Directory ramDir = newDirectory(random);
-		IndexWriter writer = new IndexWriter(ramDir, newIndexWriterConfig(random, TEST_VERSION_CURRENT, null));
+		Directory ramDir = newDirectory();
+		IndexWriter writer = new IndexWriter(ramDir, newIndexWriterConfig(TEST_VERSION_CURRENT, null));
 		writer.commit();
 		try
 		{
-			IndexReader reader = IndexReader.open(ramDir, true);
+			IndexReader reader = new SlowMultiReaderWrapper(IndexReader.open(ramDir, true));
 			try
 			{
-				assertNull(filter.getDocIdSet(reader));
+				assertNull(filter.getDocIdSet((AtomicReaderContext) reader.getTopReaderContext()));
 			}
 			finally
 			{

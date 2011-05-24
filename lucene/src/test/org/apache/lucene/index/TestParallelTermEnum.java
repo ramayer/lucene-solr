@@ -18,12 +18,10 @@ package org.apache.lucene.index;
  */
 
 import java.io.IOException;
-import java.util.Random;
 
 import org.apache.lucene.util.LuceneTestCase;
 import org.apache.lucene.analysis.MockAnalyzer;
 import org.apache.lucene.document.Document;
-import org.apache.lucene.document.Field;
 import org.apache.lucene.document.Field.Index;
 import org.apache.lucene.document.Field.Store;
 import org.apache.lucene.store.Directory;
@@ -36,30 +34,29 @@ public class TestParallelTermEnum extends LuceneTestCase {
     private Directory rd2;
     
     @Override
-    protected void setUp() throws Exception {
+    public void setUp() throws Exception {
         super.setUp();
         Document doc;
-        Random random = newRandom();
-        rd1 = newDirectory(random);
-        IndexWriter iw1 = new IndexWriter(rd1, newIndexWriterConfig(random, TEST_VERSION_CURRENT, new MockAnalyzer()));
+        rd1 = newDirectory();
+        IndexWriter iw1 = new IndexWriter(rd1, newIndexWriterConfig( TEST_VERSION_CURRENT, new MockAnalyzer(random)));
 
         doc = new Document();
-        doc.add(new Field("field1", "the quick brown fox jumps", Store.YES,
+        doc.add(newField("field1", "the quick brown fox jumps", Store.YES,
             Index.ANALYZED));
-        doc.add(new Field("field2", "the quick brown fox jumps", Store.YES,
+        doc.add(newField("field2", "the quick brown fox jumps", Store.YES,
             Index.ANALYZED));
-        doc.add(new Field("field4", "", Store.NO, Index.ANALYZED));
+        doc.add(newField("field4", "", Store.NO, Index.ANALYZED));
         iw1.addDocument(doc);
 
         iw1.close();
-        rd2 = newDirectory(random);
-        IndexWriter iw2 = new IndexWriter(rd2, newIndexWriterConfig(random, TEST_VERSION_CURRENT, new MockAnalyzer()));
+        rd2 = newDirectory();
+        IndexWriter iw2 = new IndexWriter(rd2, newIndexWriterConfig( TEST_VERSION_CURRENT, new MockAnalyzer(random)));
 
         doc = new Document();
-        doc.add(new Field("field0", "", Store.NO, Index.ANALYZED));
-        doc.add(new Field("field1", "the fox jumps over the lazy dog",
+        doc.add(newField("field0", "", Store.NO, Index.ANALYZED));
+        doc.add(newField("field1", "the fox jumps over the lazy dog",
             Store.YES, Index.ANALYZED));
-        doc.add(new Field("field3", "the fox jumps over the lazy dog",
+        doc.add(newField("field3", "the fox jumps over the lazy dog",
             Store.YES, Index.ANALYZED));
         iw2.addDocument(doc);
 
@@ -70,7 +67,7 @@ public class TestParallelTermEnum extends LuceneTestCase {
     }
 
     @Override
-    protected void tearDown() throws Exception {
+    public void tearDown() throws Exception {
         ir1.close();
         ir2.close();
         rd1.close();

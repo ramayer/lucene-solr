@@ -18,13 +18,14 @@ package org.apache.lucene.search;
  */
 
 import java.io.IOException;
-import java.util.Random;
 
 import org.apache.lucene.document.Document;
 import org.apache.lucene.document.Field;
 import org.apache.lucene.index.IndexReader;
+import org.apache.lucene.index.MultiFields;
 import org.apache.lucene.index.RandomIndexWriter;
 import org.apache.lucene.index.Term;
+import org.apache.lucene.index.Terms;
 import org.apache.lucene.index.TermsEnum;
 import org.apache.lucene.store.Directory;
 import org.apache.lucene.util.LuceneTestCase;
@@ -39,17 +40,17 @@ public class TestAutomatonQuery extends LuceneTestCase {
 
   private final String FN = "field";
   
+  @Override
   public void setUp() throws Exception {
     super.setUp();
-    Random random = newRandom();
-    directory = newDirectory(random);
+    directory = newDirectory();
     RandomIndexWriter writer = new RandomIndexWriter(random, directory);
     Document doc = new Document();
-    Field titleField = new Field("title", "some title", Field.Store.NO,
+    Field titleField = newField("title", "some title", Field.Store.NO,
         Field.Index.ANALYZED);
-    Field field = new Field(FN, "this is document one 2345", Field.Store.NO,
+    Field field = newField(FN, "this is document one 2345", Field.Store.NO,
         Field.Index.ANALYZED);
-    Field footerField = new Field("footer", "a footer", Field.Store.NO,
+    Field footerField = newField("footer", "a footer", Field.Store.NO,
         Field.Index.ANALYZED);
     doc.add(titleField);
     doc.add(field);
@@ -61,10 +62,11 @@ public class TestAutomatonQuery extends LuceneTestCase {
         + " with numbers 1234 5678.9 and letter b");
     writer.addDocument(doc);
     reader = writer.getReader();
-    searcher = new IndexSearcher(reader);
+    searcher = newSearcher(reader);
     writer.close();
   }
   
+  @Override
   public void tearDown() throws Exception {
     searcher.close();
     reader.close();
@@ -77,6 +79,9 @@ public class TestAutomatonQuery extends LuceneTestCase {
   }
   
   private int automatonQueryNrHits(AutomatonQuery query) throws IOException {
+    if (VERBOSE) {
+      System.out.println("TEST: run aq=" + query);
+    }
     return searcher.search(query, 5).totalHits;
   }
   
@@ -172,7 +177,8 @@ public class TestAutomatonQuery extends LuceneTestCase {
   public void testRewriteSingleTerm() throws IOException {
     AutomatonQuery aq = new AutomatonQuery(newTerm("bogus"), BasicAutomata
         .makeString("piece"));
-    assertTrue(aq.getTermsEnum(searcher.getIndexReader()) instanceof SingleTermsEnum);
+    Terms terms = MultiFields.getTerms(searcher.getIndexReader(), FN);
+    assertTrue(aq.getTermsEnum(terms) instanceof SingleTermsEnum);
     assertEquals(1, automatonQueryNrHits(aq));
   }
   
@@ -186,7 +192,8 @@ public class TestAutomatonQuery extends LuceneTestCase {
     Automaton prefixAutomaton = BasicOperations.concatenate(pfx, BasicAutomata
         .makeAnyString());
     AutomatonQuery aq = new AutomatonQuery(newTerm("bogus"), prefixAutomaton);
-    assertTrue(aq.getTermsEnum(searcher.getIndexReader()) instanceof PrefixTermsEnum);
+    Terms terms = MultiFields.getTerms(searcher.getIndexReader(), FN);
+    assertTrue(aq.getTermsEnum(terms) instanceof PrefixTermsEnum);
     assertEquals(3, automatonQueryNrHits(aq));
   }
   
@@ -198,7 +205,8 @@ public class TestAutomatonQuery extends LuceneTestCase {
         .makeEmpty());
     // not yet available: assertTrue(aq.getEnum(searcher.getIndexReader())
     // instanceof EmptyTermEnum);
-    assertSame(TermsEnum.EMPTY, aq.getTermsEnum(searcher.getIndexReader()));
+    Terms terms = MultiFields.getTerms(searcher.getIndexReader(), FN);
+    assertSame(TermsEnum.EMPTY, aq.getTermsEnum(terms));
     assertEquals(0, automatonQueryNrHits(aq));
   }
 }

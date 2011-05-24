@@ -17,50 +17,43 @@ package org.apache.lucene.search;
  * limitations under the License.
  */
 
+import java.io.IOException;
+import java.io.Reader;
+import java.text.Collator;
+import java.util.Locale;
+import java.util.Set;
+
+import org.apache.lucene.analysis.*;
+import org.apache.lucene.analysis.tokenattributes.CharTermAttribute;
 import org.apache.lucene.document.Document;
 import org.apache.lucene.document.Field;
 import org.apache.lucene.index.IndexWriter;
+import org.apache.lucene.index.MultiFields;
+import org.apache.lucene.index.Terms;
 import org.apache.lucene.index.IndexWriterConfig.OpenMode;
 import org.apache.lucene.store.Directory;
-import org.apache.lucene.analysis.Analyzer;
-import org.apache.lucene.analysis.MockAnalyzer;
-import org.apache.lucene.analysis.MockTokenizer;
-import org.apache.lucene.analysis.TokenStream;
-import org.apache.lucene.analysis.Tokenizer;
-import org.apache.lucene.analysis.tokenattributes.CharTermAttribute;
-
 import org.apache.lucene.util.LuceneTestCase;
-import java.io.IOException;
-import java.io.Reader;
-import java.util.Locale;
-import java.util.Random;
-import java.util.Set;
-import java.util.HashSet;
-import java.util.Arrays;
-import java.text.Collator;
 
 
 public class TestTermRangeQuery extends LuceneTestCase {
 
   private int docCount = 0;
   private Directory dir;
-  private Random random;
   
   @Override
-  protected void setUp() throws Exception {
+  public void setUp() throws Exception {
     super.setUp();
-    random = newRandom();
-    dir = newDirectory(random);
+    dir = newDirectory();
   }
   
   @Override
-  protected void tearDown() throws Exception {
+  public void tearDown() throws Exception {
     dir.close();
     super.tearDown();
   }
 
   public void testExclusive() throws Exception {
-    Query query = new TermRangeQuery("content", "A", "C", false, false);
+    Query query = TermRangeQuery.newStringRange("content", "A", "C", false, false);
     initializeIndex(new String[] {"A", "B", "C", "D"});
     IndexSearcher searcher = new IndexSearcher(dir, true);
     ScoreDoc[] hits = searcher.search(query, null, 1000).scoreDocs;
@@ -81,7 +74,7 @@ public class TestTermRangeQuery extends LuceneTestCase {
   }
   
   public void testInclusive() throws Exception {
-    Query query = new TermRangeQuery("content", "A", "C", true, true);
+    Query query = TermRangeQuery.newStringRange("content", "A", "C", true, true);
 
     initializeIndex(new String[]{"A", "B", "C", "D"});
     IndexSearcher searcher = new IndexSearcher(dir, true);
@@ -106,17 +99,18 @@ public class TestTermRangeQuery extends LuceneTestCase {
     initializeIndex(new String[]{"A", "B", "C", "D"});
     IndexSearcher searcher = new IndexSearcher(dir, true);
     TermRangeQuery query = new TermRangeQuery("content", null, null, true, true);
-    assertFalse(query.getTermsEnum(searcher.getIndexReader()) instanceof TermRangeTermsEnum);
+    Terms terms = MultiFields.getTerms(searcher.getIndexReader(), "content");
+    assertFalse(query.getTermsEnum(terms) instanceof TermRangeTermsEnum);
     assertEquals(4, searcher.search(query, null, 1000).scoreDocs.length);
     query = new TermRangeQuery("content", null, null, false, false);
-    assertFalse(query.getTermsEnum(searcher.getIndexReader()) instanceof TermRangeTermsEnum);
+    assertFalse(query.getTermsEnum(terms) instanceof TermRangeTermsEnum);
     assertEquals(4, searcher.search(query, null, 1000).scoreDocs.length);
-    query = new TermRangeQuery("content", "", null, true, false);
-    assertFalse(query.getTermsEnum(searcher.getIndexReader()) instanceof TermRangeTermsEnum);
+    query = TermRangeQuery.newStringRange("content", "", null, true, false);
+    assertFalse(query.getTermsEnum(terms) instanceof TermRangeTermsEnum);
     assertEquals(4, searcher.search(query, null, 1000).scoreDocs.length);
     // and now anothe one
-    query = new TermRangeQuery("content", "B", null, true, false);
-    assertTrue(query.getTermsEnum(searcher.getIndexReader()) instanceof TermRangeTermsEnum);
+    query = TermRangeQuery.newStringRange("content", "B", null, true, false);
+    assertTrue(query.getTermsEnum(terms) instanceof TermRangeTermsEnum);
     assertEquals(3, searcher.search(query, null, 1000).scoreDocs.length);
     searcher.close();
   }
@@ -127,7 +121,7 @@ public class TestTermRangeQuery extends LuceneTestCase {
     initializeIndex(new String[]{"A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K"});
 
     IndexSearcher searcher = new IndexSearcher(dir, true);
-    TermRangeQuery query = new TermRangeQuery("content", "B", "J", true, true);
+    TermRangeQuery query = TermRangeQuery.newStringRange("content", "B", "J", true, true);
     checkBooleanTerms(searcher, query, "B", "C", "D", "E", "F", "G", "H", "I", "J");
     
     final int savedClauseCount = BooleanQuery.getMaxClauseCount();
@@ -140,10 +134,10 @@ public class TestTermRangeQuery extends LuceneTestCase {
     searcher.close();
   }
   
-  private void checkBooleanTerms(Searcher searcher, TermRangeQuery query, String... terms) throws IOException {
-    query.setRewriteMethod(new MultiTermQuery.TopTermsScoringBooleanQueryRewrite());
+  private void checkBooleanTerms(IndexSearcher searcher, TermRangeQuery query, String... terms) throws IOException {
+    query.setRewriteMethod(new MultiTermQuery.TopTermsScoringBooleanQueryRewrite(50));
     final BooleanQuery bq = (BooleanQuery) searcher.rewrite(query);
-    final Set<String> allowedTerms = new HashSet<String>(Arrays.asList(terms));
+    final Set<String> allowedTerms = asSet(terms);
     assertEquals(allowedTerms.size(), bq.clauses().size());
     for (BooleanClause c : bq.clauses()) {
       assertTrue(c.getQuery() instanceof TermQuery);
@@ -156,10 +150,10 @@ public class TestTermRangeQuery extends LuceneTestCase {
   }
 
   public void testEqualsHashcode() {
-    Query query = new TermRangeQuery("content", "A", "C", true, true);
+    Query query = TermRangeQuery.newStringRange("content", "A", "C", true, true);
     
     query.setBoost(1.0f);
-    Query other = new TermRangeQuery("content", "A", "C", true, true);
+    Query other = TermRangeQuery.newStringRange("content", "A", "C", true, true);
     other.setBoost(1.0f);
 
     assertEquals("query equals itself is true", query, query);
@@ -169,120 +163,32 @@ public class TestTermRangeQuery extends LuceneTestCase {
     other.setBoost(2.0f);
     assertFalse("Different boost queries are not equal", query.equals(other));
 
-    other = new TermRangeQuery("notcontent", "A", "C", true, true);
+    other = TermRangeQuery.newStringRange("notcontent", "A", "C", true, true);
     assertFalse("Different fields are not equal", query.equals(other));
 
-    other = new TermRangeQuery("content", "X", "C", true, true);
+    other = TermRangeQuery.newStringRange("content", "X", "C", true, true);
     assertFalse("Different lower terms are not equal", query.equals(other));
 
-    other = new TermRangeQuery("content", "A", "Z", true, true);
+    other = TermRangeQuery.newStringRange("content", "A", "Z", true, true);
     assertFalse("Different upper terms are not equal", query.equals(other));
 
-    query = new TermRangeQuery("content", null, "C", true, true);
-    other = new TermRangeQuery("content", null, "C", true, true);
+    query = TermRangeQuery.newStringRange("content", null, "C", true, true);
+    other = TermRangeQuery.newStringRange("content", null, "C", true, true);
     assertEquals("equivalent queries with null lowerterms are equal()", query, other);
     assertEquals("hashcode must return same value when equals is true", query.hashCode(), other.hashCode());
 
-    query = new TermRangeQuery("content", "C", null, true, true);
-    other = new TermRangeQuery("content", "C", null, true, true);
+    query = TermRangeQuery.newStringRange("content", "C", null, true, true);
+    other = TermRangeQuery.newStringRange("content", "C", null, true, true);
     assertEquals("equivalent queries with null upperterms are equal()", query, other);
     assertEquals("hashcode returns same value", query.hashCode(), other.hashCode());
 
-    query = new TermRangeQuery("content", null, "C", true, true);
-    other = new TermRangeQuery("content", "C", null, true, true);
+    query = TermRangeQuery.newStringRange("content", null, "C", true, true);
+    other = TermRangeQuery.newStringRange("content", "C", null, true, true);
     assertFalse("queries with different upper and lower terms are not equal", query.equals(other));
 
-    query = new TermRangeQuery("content", "A", "C", false, false);
-    other = new TermRangeQuery("content", "A", "C", true, true);
+    query = TermRangeQuery.newStringRange("content", "A", "C", false, false);
+    other = TermRangeQuery.newStringRange("content", "A", "C", true, true);
     assertFalse("queries with different inclusive are not equal", query.equals(other));
-    
-    query = new TermRangeQuery("content", "A", "C", false, false);
-    other = new TermRangeQuery("content", "A", "C", false, false, Collator.getInstance());
-    assertFalse("a query with a collator is not equal to one without", query.equals(other));
-  }
-
-  public void testExclusiveCollating() throws Exception {
-    Query query = new TermRangeQuery("content", "A", "C", false, false, Collator.getInstance(Locale.ENGLISH));
-    initializeIndex(new String[] {"A", "B", "C", "D"});
-    IndexSearcher searcher = new IndexSearcher(dir, true);
-    ScoreDoc[] hits = searcher.search(query, null, 1000).scoreDocs;
-    assertEquals("A,B,C,D, only B in range", 1, hits.length);
-    searcher.close();
-
-    initializeIndex(new String[] {"A", "B", "D"});
-    searcher = new IndexSearcher(dir, true);
-    hits = searcher.search(query, null, 1000).scoreDocs;
-    assertEquals("A,B,D, only B in range", 1, hits.length);
-    searcher.close();
-
-    addDoc("C");
-    searcher = new IndexSearcher(dir, true);
-    hits = searcher.search(query, null, 1000).scoreDocs;
-    assertEquals("C added, still only B in range", 1, hits.length);
-    searcher.close();
-  }
-
-  public void testInclusiveCollating() throws Exception {
-    Query query = new TermRangeQuery("content", "A", "C",true, true, Collator.getInstance(Locale.ENGLISH));
-
-    initializeIndex(new String[]{"A", "B", "C", "D"});
-    IndexSearcher searcher = new IndexSearcher(dir, true);
-    ScoreDoc[] hits = searcher.search(query, null, 1000).scoreDocs;
-    assertEquals("A,B,C,D - A,B,C in range", 3, hits.length);
-    searcher.close();
-
-    initializeIndex(new String[]{"A", "B", "D"});
-    searcher = new IndexSearcher(dir, true);
-    hits = searcher.search(query, null, 1000).scoreDocs;
-    assertEquals("A,B,D - A and B in range", 2, hits.length);
-    searcher.close();
-
-    addDoc("C");
-    searcher = new IndexSearcher(dir, true);
-    hits = searcher.search(query, null, 1000).scoreDocs;
-    assertEquals("C added - A, B, C in range", 3, hits.length);
-    searcher.close();
-  }
-
-  public void testFarsi() throws Exception {
-    // Neither Java 1.4.2 nor 1.5.0 has Farsi Locale collation available in
-    // RuleBasedCollator.  However, the Arabic Locale seems to order the Farsi
-    // characters properly.
-    Collator collator = Collator.getInstance(new Locale("ar"));
-    Query query = new TermRangeQuery("content", "\u062F", "\u0698", true, true, collator);
-    // Unicode order would include U+0633 in [ U+062F - U+0698 ], but Farsi
-    // orders the U+0698 character before the U+0633 character, so the single
-    // index Term below should NOT be returned by a TermRangeQuery with a Farsi
-    // Collator (or an Arabic one for the case when Farsi is not supported).
-    initializeIndex(new String[]{ "\u0633\u0627\u0628"});
-    IndexSearcher searcher = new IndexSearcher(dir, true);
-    ScoreDoc[] hits = searcher.search(query, null, 1000).scoreDocs;
-    assertEquals("The index Term should not be included.", 0, hits.length);
-
-    query = new TermRangeQuery("content", "\u0633", "\u0638",true, true, collator);
-    hits = searcher.search(query, null, 1000).scoreDocs;
-    assertEquals("The index Term should be included.", 1, hits.length);
-    searcher.close();
-  }
-  
-  public void testDanish() throws Exception {
-    Collator collator = Collator.getInstance(new Locale("da", "dk"));
-    // Danish collation orders the words below in the given order (example taken
-    // from TestSort.testInternationalSort() ).
-    String[] words = { "H\u00D8T", "H\u00C5T", "MAND" };
-    Query query = new TermRangeQuery("content", "H\u00D8T", "MAND", false, false, collator);
-
-    // Unicode order would not include "H\u00C5T" in [ "H\u00D8T", "MAND" ],
-    // but Danish collation does.
-    initializeIndex(words);
-    IndexSearcher searcher = new IndexSearcher(dir, true);
-    ScoreDoc[] hits = searcher.search(query, null, 1000).scoreDocs;
-    assertEquals("The index Term should be included.", 1, hits.length);
-
-    query = new TermRangeQuery("content", "H\u00C5T", "MAND", false, false, collator);
-    hits = searcher.search(query, null, 1000).scoreDocs;
-    assertEquals("The index Term should not be included.", 0, hits.length);
-    searcher.close();
   }
 
   private static class SingleCharAnalyzer extends Analyzer {
@@ -337,11 +243,11 @@ public class TestTermRangeQuery extends LuceneTestCase {
   }
 
   private void initializeIndex(String[] values) throws IOException {
-    initializeIndex(values, new MockAnalyzer(MockTokenizer.WHITESPACE, false));
+    initializeIndex(values, new MockAnalyzer(random, MockTokenizer.WHITESPACE, false));
   }
 
   private void initializeIndex(String[] values, Analyzer analyzer) throws IOException {
-    IndexWriter writer = new IndexWriter(dir, newIndexWriterConfig(random,
+    IndexWriter writer = new IndexWriter(dir, newIndexWriterConfig(
         TEST_VERSION_CURRENT, analyzer).setOpenMode(OpenMode.CREATE));
     for (int i = 0; i < values.length; i++) {
       insertDoc(writer, values[i]);
@@ -349,8 +255,9 @@ public class TestTermRangeQuery extends LuceneTestCase {
     writer.close();
   }
 
+  // shouldnt create an analyzer for every doc?
   private void addDoc(String content) throws IOException {
-    IndexWriter writer = new IndexWriter(dir, newIndexWriterConfig(random, TEST_VERSION_CURRENT, new MockAnalyzer(MockTokenizer.WHITESPACE, false)).setOpenMode(OpenMode.APPEND));
+    IndexWriter writer = new IndexWriter(dir, newIndexWriterConfig( TEST_VERSION_CURRENT, new MockAnalyzer(random, MockTokenizer.WHITESPACE, false)).setOpenMode(OpenMode.APPEND));
     insertDoc(writer, content);
     writer.close();
   }
@@ -358,8 +265,8 @@ public class TestTermRangeQuery extends LuceneTestCase {
   private void insertDoc(IndexWriter writer, String content) throws IOException {
     Document doc = new Document();
 
-    doc.add(new Field("id", "id" + docCount, Field.Store.YES, Field.Index.NOT_ANALYZED));
-    doc.add(new Field("content", content, Field.Store.NO, Field.Index.ANALYZED));
+    doc.add(newField("id", "id" + docCount, Field.Store.YES, Field.Index.NOT_ANALYZED));
+    doc.add(newField("content", content, Field.Store.NO, Field.Index.ANALYZED));
 
     writer.addDocument(doc);
     docCount++;
@@ -369,7 +276,7 @@ public class TestTermRangeQuery extends LuceneTestCase {
   public void testExclusiveLowerNull() throws Exception {
     Analyzer analyzer = new SingleCharAnalyzer();
     //http://issues.apache.org/jira/browse/LUCENE-38
-    Query query = new TermRangeQuery("content", null, "C",
+    Query query = TermRangeQuery.newStringRange("content", null, "C",
                                  false, false);
     initializeIndex(new String[] {"A", "B", "", "C", "D"}, analyzer);
     IndexSearcher searcher = new IndexSearcher(dir, true);
@@ -402,7 +309,7 @@ public class TestTermRangeQuery extends LuceneTestCase {
   public void testInclusiveLowerNull() throws Exception {
     //http://issues.apache.org/jira/browse/LUCENE-38
     Analyzer analyzer = new SingleCharAnalyzer();
-    Query query = new TermRangeQuery("content", null, "C", true, true);
+    Query query = TermRangeQuery.newStringRange("content", null, "C", true, true);
     initializeIndex(new String[]{"A", "B", "","C", "D"}, analyzer);
     IndexSearcher searcher = new IndexSearcher(dir, true);
     int numHits = searcher.search(query, null, 1000).totalHits;

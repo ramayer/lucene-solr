@@ -27,7 +27,6 @@ import org.apache.lucene.queryParser.QueryParser;
 import org.apache.lucene.search.*;
 import org.apache.lucene.analysis.Analyzer;
 import org.apache.lucene.analysis.TokenStream;
-import org.apache.solr.common.SolrException;
 import org.apache.solr.common.params.DefaultSolrParams;
 import org.apache.solr.common.params.DisMaxParams;
 import org.apache.solr.common.params.SolrParams;
@@ -49,6 +48,7 @@ import java.io.IOException;
 
 /**
  * An advanced multi-field query parser.
+ * @lucene.experimental
  */
 public class ExtendedDismaxQParserPlugin extends QParserPlugin {
   public static final String NAME = "edismax";
@@ -56,6 +56,7 @@ public class ExtendedDismaxQParserPlugin extends QParserPlugin {
   public void init(NamedList args) {
   }
 
+  @Override
   public QParser createParser(String qstr, SolrParams localParams, SolrParams params, SolrQueryRequest req) {
     return new ExtendedDismaxQParser(qstr, localParams, params, req);
   }
@@ -97,6 +98,7 @@ class ExtendedDismaxQParser extends QParser {
   private QParser altQParser;
 
 
+  @Override
   public Query parse() throws ParseException {
     SolrParams localParams = getLocalParams();
     SolrParams params = getParams();
@@ -146,7 +148,8 @@ class ExtendedDismaxQParser extends QParser {
         altUserQuery = altQParser.getQuery();
         query.add( altUserQuery , BooleanClause.Occur.MUST );
       } else {
-        throw new SolrException( SolrException.ErrorCode.BAD_REQUEST, "missing query string" );
+        return null;
+        // throw new SolrException( SolrException.ErrorCode.BAD_REQUEST, "missing query string" );
       }
     }
     else {     
@@ -235,6 +238,7 @@ class ExtendedDismaxQParser extends QParser {
 
       try {
         up.setRemoveStopFilter(!stopwords);
+        up.exceptions = true;
         parsedUserQuery = up.parse(mainUserQuery);
 
         if (stopwords && isEmpty(parsedUserQuery)) {
@@ -244,6 +248,7 @@ class ExtendedDismaxQParser extends QParser {
         }
       } catch (Exception e) {
         // ignore failure and reparse later after escaping reserved chars
+        up.exceptions = false;
       }
 
       if (parsedUserQuery != null && doMinMatched) {
@@ -482,9 +487,10 @@ class ExtendedDismaxQParser extends QParser {
 
   @Override
   public Query getHighlightQuery() throws ParseException {
-    return parsedUserQuery;
+    return parsedUserQuery == null ? altUserQuery : parsedUserQuery;
   }
 
+  @Override
   public void addDebugInfo(NamedList<Object> debugInfo) {
     super.addDebugInfo(debugInfo);
     debugInfo.add("altquerystring", altUserQuery);
@@ -783,11 +789,18 @@ class ExtendedDismaxQParser extends QParser {
       RANGE
     }
 
+
+  static final RuntimeException unknownField = new RuntimeException("UnknownField");
+  static {
+    unknownField.fillInStackTrace();
+  }
+
   /**
    * A subclass of SolrQueryParser that supports aliasing fields for
    * constructing DisjunctionMaxQueries.
    */
   class ExtendedSolrQueryParser extends SolrQueryParser {
+
 
     /** A simple container for storing alias info
      */
@@ -801,6 +814,7 @@ class ExtendedDismaxQParser extends QParser {
     boolean allowWildcard=true;
     int minClauseSize = 0;    // minimum number of clauses per phrase query...
                               // used when constructing boosting part of query via sloppy phrases
+    boolean exceptions;  //  allow exceptions to be thrown (for example on a missing field)
 
     ExtendedAnalyzer analyzer;
 
@@ -822,6 +836,7 @@ class ExtendedDismaxQParser extends QParser {
       analyzer.removeStopFilter = remove;
     }
 
+    @Override
     protected Query getBooleanQuery(List clauses, boolean disableCoord) throws ParseException {
       Query q = super.getBooleanQuery(clauses, disableCoord);
       if (q != null) {
@@ -836,6 +851,7 @@ class ExtendedDismaxQParser extends QParser {
     ////////////////////////////////////////////////////////////////////////////
     ////////////////////////////////////////////////////////////////////////////
 
+    @Override
     protected void addClause(List clauses, int conj, int mods, Query q) {
 //System.out.println("addClause:clauses="+clauses+" conj="+conj+" mods="+mods+" q="+q);
       super.addClause(clauses, conj, mods, q);
@@ -867,6 +883,7 @@ class ExtendedDismaxQParser extends QParser {
     String val;
     String val2;
     boolean bool;
+    boolean bool2;
     float flt;
     int slop;
 
@@ -905,14 +922,15 @@ class ExtendedDismaxQParser extends QParser {
     }
 
     @Override
-    protected Query getRangeQuery(String field, String a, String b, boolean inclusive) throws ParseException {
+     protected Query getRangeQuery(String field, String a, String b, boolean startInclusive, boolean endInclusive) throws ParseException {
 //System.out.println("getRangeQuery:");
 
       this.type = QType.RANGE;
       this.field = field;
       this.val = a;
       this.val2 = b;
-      this.bool = inclusive;
+      this.bool = startInclusive;
+      this.bool2 = endInclusive;
       return getAliasedQuery();
     }
 
@@ -976,6 +994,15 @@ class ExtendedDismaxQParser extends QParser {
           return q;
         }
       } else {
+
+        // verify that a fielded query is actually on a field that exists... if not,
+        // then throw an exception to get us out of here, and we'll treat it like a
+        // literal when we try the escape+re-parse.
+        if (exceptions) {
+          FieldType ft = schema.getFieldTypeNoEx(field);
+          if (ft == null) throw unknownField;
+        }
+
         return getQuery();
       }
     }
@@ -1023,7 +1050,7 @@ class ExtendedDismaxQParser extends QParser {
           case PREFIX: return super.getPrefixQuery(field, val);
           case WILDCARD: return super.getWildcardQuery(field, val);
           case FUZZY: return super.getFuzzyQuery(field, val, flt);
-          case RANGE: return super.getRangeQuery(field, val, val2, bool);
+          case RANGE: return super.getRangeQuery(field, val, val2, bool, bool2);
         }
         return null;
 
@@ -1075,6 +1102,7 @@ final class ExtendedAnalyzer extends Analyzer {
     this.queryAnalyzer = parser.getReq().getSchema().getQueryAnalyzer();
   }
 
+  @Override
   public TokenStream tokenStream(String fieldName, Reader reader) {
     if (!removeStopFilter) {
       return queryAnalyzer.tokenStream(fieldName, reader);
@@ -1138,10 +1166,12 @@ final class ExtendedAnalyzer extends Analyzer {
     return newa.tokenStream(fieldName, reader);        
   }
 
+  @Override
   public int getPositionIncrementGap(String fieldName) {
     return queryAnalyzer.getPositionIncrementGap(fieldName);
   }
 
+  @Override
   public TokenStream reusableTokenStream(String fieldName, Reader reader) throws IOException {
     if (!removeStopFilter) {
       return queryAnalyzer.reusableTokenStream(fieldName, reader);

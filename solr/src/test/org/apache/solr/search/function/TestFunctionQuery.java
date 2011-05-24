@@ -17,13 +17,16 @@
 
 package org.apache.solr.search.function;
 
+import org.apache.lucene.index.FieldInvertState;
 import org.apache.lucene.search.DefaultSimilarity;
 import org.apache.lucene.search.FieldCache;
 import org.apache.lucene.search.Similarity;
 import org.apache.solr.SolrTestCaseJ4;
+import org.apache.solr.common.params.SolrParams;
+import org.apache.solr.common.util.NamedList;
 import org.junit.BeforeClass;
 import org.junit.Test;
-
+import org.junit.Ignore;
 import java.io.FileOutputStream;
 import java.io.OutputStreamWriter;
 import java.io.Writer;
@@ -31,8 +34,6 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Random;
-
-import static org.junit.Assert.assertTrue;
 
 /**
  * Tests some basic functionality of Solr while demonstrating good
@@ -73,16 +74,14 @@ public class TestFunctionQuery extends SolrTestCaseJ4 {
 
   // replace \0 with the field name and create a parseable string 
   public String func(String field, String template) {
-    StringBuilder sb = new StringBuilder("_val_:\"");
+    StringBuilder sb = new StringBuilder("{!func}");
     for (char ch : template.toCharArray()) {
       if (ch=='\0') {
         sb.append(field);
         continue;
       }
-      if (ch=='"') sb.append('\\');
       sb.append(ch);
     }
-    sb.append('"');
     return sb.toString();
   }
 
@@ -194,7 +193,7 @@ public class TestFunctionQuery extends SolrTestCaseJ4 {
   }
 
   @Test
-  public void testExternalField() {
+  public void testExternalField() throws Exception {
     String field = "foo_extf";
 
     float[] ids = {100,-4,0,10,25,5,77,23,55,-78,-45,-24,63,78,94,22,34,54321,261,-627};
@@ -213,13 +212,12 @@ public class TestFunctionQuery extends SolrTestCaseJ4 {
     assertTrue(orig == FileFloatSource.onlyForTesting);
 
     makeExternalFile(field, "0=1","UTF-8");
-    assertU(adoc("id", "10000")); // will get same reader if no index change
-    assertU(commit());   
+    assertU(h.query("/reloadCache",lrf.makeRequest("","")));
     singleTest(field, "sqrt(\0)");
     assertTrue(orig != FileFloatSource.onlyForTesting);
 
 
-    Random r = new Random();
+    Random r = random;
     for (int i=0; i<10; i++) {   // do more iterations for a thorough test
       int len = r.nextInt(ids.length+1);
       boolean sorted = r.nextBoolean();
@@ -250,8 +248,7 @@ public class TestFunctionQuery extends SolrTestCaseJ4 {
       makeExternalFile(field, sb.toString(),"UTF-8");
 
       // make it visible
-      assertU(adoc("id", "10001")); // will get same reader if no index change
-      assertU(commit());
+      assertU(h.query("/reloadCache",lrf.makeRequest("","")));
 
       // test it
       float[] answers = new float[ids.length*2];
@@ -297,8 +294,11 @@ public class TestFunctionQuery extends SolrTestCaseJ4 {
         "//float[@name='score']='" + similarity.idf(3,6)  + "'");
     assertQ(req("fl","*,score","q", "{!func}tf(a_t,cow)", "fq","id:6"),
         "//float[@name='score']='" + similarity.tf(5)  + "'");
+    FieldInvertState state = new FieldInvertState();
+    state.setBoost(1.0f);
+    state.setLength(4);
     assertQ(req("fl","*,score","q", "{!func}norm(a_t)", "fq","id:2"),
-        "//float[@name='score']='" + similarity.lengthNorm("a_t",4)  + "'");  // sqrt(4)==2 and is exactly representable when quantized to a byte
+        "//float[@name='score']='" + similarity.computeNorm(state)  + "'");  // sqrt(4)==2 and is exactly representable when quantized to a byte
 
     // test that ord and rord are working on a global index basis, not just
     // at the segment level (since Lucene 2.9 has switched to per-segment searching)
@@ -317,21 +317,26 @@ public class TestFunctionQuery extends SolrTestCaseJ4 {
 
     assertQ(req("fl","*,score","q", "{!func}ms(2009-08-31T12:10:10.125Z/SECOND,2009-08-31T12:10:10.124Z/SECOND)", "fq","id:1"), "//float[@name='score']='0.0'");
 
+    // test that we can specify "NOW"
+    assertQ(req("fl","*,score","q", "{!func}ms(NOW)", "NOW","1000"), "//float[@name='score']='1000.0'");
+
+
     for (int i=100; i<112; i++) {
       assertU(adoc("id",""+i, "text","batman"));
     }
     assertU(commit());
-    assertU(adoc("id","120", "text","batman superman"));   // in a segment by itself
+    assertU(adoc("id","120", "text","batman superman"));   // in a smaller segment
+    assertU(adoc("id","121", "text","superman"));
     assertU(commit());
 
-    // batman and superman have the same idf in single-doc segment, but very different in the complete index.
+    // superman has a higher df (thus lower idf) in one segment, but reversed in the complete index
     String q ="{!func}query($qq)";
     String fq="id:120"; 
     assertQ(req("fl","*,score","q", q, "qq","text:batman", "fq",fq), "//float[@name='score']<'1.0'");
     assertQ(req("fl","*,score","q", q, "qq","text:superman", "fq",fq), "//float[@name='score']>'1.0'");
 
     // test weighting through a function range query
-    assertQ(req("fl","*,score", "q", "{!frange l=1 u=10}query($qq)", "qq","text:superman"), "//*[@numFound='1']");
+    assertQ(req("fl","*,score", "fq",fq,  "q", "{!frange l=1 u=10}query($qq)", "qq","text:superman"), "//*[@numFound='1']");
 
     // test weighting through a complex function
     q ="{!func}sub(div(sum(0.0,product(1,query($qq))),1),0)";
@@ -339,7 +344,109 @@ public class TestFunctionQuery extends SolrTestCaseJ4 {
     assertQ(req("fl","*,score","q", q, "qq","text:superman", "fq",fq), "//float[@name='score']>'1.0'");
 
 
+    // test full param dereferencing
+    assertQ(req("fl","*,score","q", "{!func}add($v1,$v2)", "v1","add($v3,$v4)", "v2","1", "v3","2", "v4","5"
+        , "fq","id:1"), "//float[@name='score']='8.0'");
+
+    // test ability to parse multiple values
+    assertQ(req("fl","*,score","q", "{!func}dist(2,vector(1,1),$pt)", "pt","3,1"
+        , "fq","id:1"), "//float[@name='score']='2.0'");
+
+    // test that extra stuff after a function causes an error
+    try {
+      assertQ(req("fl","*,score","q", "{!func}10 wow dude ignore_exception"));
+      fail();
+    } catch (Exception e) {
+      // OK
+    }
+
+    // test that sorting by function weights correctly.  superman should sort higher than batman due to idf of the whole index
+
+    assertQ(req("q", "*:*", "fq","id:120 OR id:121", "sort","{!func v=$sortfunc} desc", "sortfunc","query($qq)", "qq","text:(batman OR superman)")
+           ,"*//doc[1]/float[.='120.0']"
+           ,"*//doc[2]/float[.='121.0']"
+    );
+
+
     purgeFieldCache(FieldCache.DEFAULT);   // avoid FC insanity
+  }
+
+  @Test
+  public void testSortByFunc() throws Exception {
+    assertU(adoc("id", "1", "const_s", "xx", "x_i", "100", "1_s", "a"));
+    assertU(adoc("id", "2", "const_s", "xx", "x_i", "300", "1_s", "c"));
+    assertU(adoc("id", "3", "const_s", "xx", "x_i", "200", "1_s", "b"));
+    assertU(commit());
+
+    String desc = "/response/docs==[{'x_i':300},{'x_i':200},{'x_i':100}]";
+    String asc =  "/response/docs==[{'x_i':100},{'x_i':200},{'x_i':300}]";
+
+    String threeonetwo =  "/response/docs==[{'x_i':200},{'x_i':100},{'x_i':300}]";
+
+    String q = "id:[1 TO 3]";
+    assertJQ(req("q",q,  "fl","x_i", "sort","add(x_i,x_i) desc")
+      ,desc
+    );
+
+    // param sub of entire function
+    assertJQ(req("q",q,  "fl","x_i", "sort", "const_s asc, $x asc", "x","add(x_i,x_i)")
+      ,asc
+    );
+
+    // multiple functions
+    assertJQ(req("q",q,  "fl","x_i", "sort", "$x asc, const_s asc, $y desc", "x", "5", "y","add(x_i,x_i)")
+      ,desc
+    );
+
+    // multiple functions inline
+    assertJQ(req("q",q,  "fl","x_i", "sort", "add( 10 , 10 ) asc, const_s asc, add(x_i , $const) desc", "const","50")
+      ,desc
+    );
+
+    // test function w/ local params + func inline
+    assertJQ(req("q",q,  "fl","x_i", 
+                 "sort", "const_s asc, {!key=foo}add(x_i,x_i) desc")
+             ,desc
+    );
+    assertJQ(req("q",q,  "fl","x_i", 
+                 "sort", "{!key=foo}add(x_i,x_i) desc, const_s asc")
+             ,desc
+    );
+
+    // test multiple functions w/ local params + func inline
+    assertJQ(req("q",q,  "fl","x_i", "sort", "{!key=bar}add(10,20) asc, const_s asc, {!key=foo}add(x_i,x_i) desc")
+      ,desc
+    );
+
+    // test multiple functions w/ local param value not inlined
+    assertJQ(req("q",q,  "fl","x_i", "sort", "{!key=bar v=$s1} asc, {!key=foo v=$s2} desc", "s1","add(3,4)", "s2","add(x_i,5)")
+      ,desc
+    );
+
+    // no space between inlined localparams and sort order
+    assertJQ(req("q",q,  "fl","x_i", "sort", "{!key=bar v=$s1}asc,const_s asc,{!key=foo v=$s2}desc", "s1","add(3,4)", "s2","add(x_i,5)")
+      ,desc
+    );
+
+    // field name that isn't a legal java Identifier 
+    // and starts with a number to trick function parser
+    assertJQ(req("q",q,  "fl","x_i", "sort", "1_s asc")
+             ,asc
+    );
+
+    // really ugly field name that isn't a java Id, and can't be 
+    // parsed as a func, but sorted fine in Solr 1.4
+    assertJQ(req("q",q,  "fl","x_i", 
+                 "sort", "[]_s asc, {!key=foo}add(x_i,x_i) desc")
+             ,desc
+    );
+    // use localparms to sort by a lucene query, then a function
+    assertJQ(req("q",q,  "fl","x_i", 
+                 "sort", "{!lucene v='id:3'}desc, {!key=foo}add(x_i,x_i) asc")
+             ,threeonetwo
+    );
+
+
   }
 
   @Test
@@ -390,6 +497,8 @@ public class TestFunctionQuery extends SolrTestCaseJ4 {
     dofunc("deg(.5)", Math.toDegrees(.5));
     dofunc("sqrt(9)", Math.sqrt(9));
     dofunc("cbrt(8)", Math.cbrt(8));
+    dofunc("max(0,1)", Math.max(0,1));
+    dofunc("min(0,1)", Math.min(0,1));
     dofunc("log(100)", Math.log10(100));
     dofunc("ln(3)", Math.log(3));
     dofunc("exp(1)", Math.exp(1));
@@ -410,5 +519,66 @@ public class TestFunctionQuery extends SolrTestCaseJ4 {
     dofunc("atan2(.25,.5)", Math.atan2(.25,.5));
   }
 
+  /**
+   * verify that both the field("...") value source parser as well as 
+   * ExternalFileField work with esoteric field names
+   */
+  @Test
+  public void testExternalFieldValueSourceParser() {
+    clearIndex();
+
+    String field = "CoMpleX fieldName _extf";
+    String fieldAsFunc = "field(\"CoMpleX fieldName _extf\")";
+
+    float[] ids = {100,-4,0,10,25,5,77,23,55,-78,-45,-24,63,78,94,22,34,54321,261,-627};
+
+    createIndex(null,ids);
+
+    // Unsorted field, largest first
+    makeExternalFile(field, "54321=543210\n0=-999\n25=250","UTF-8");
+    // test identity (straight field value)
+    singleTest(fieldAsFunc, "\0", 54321, 543210, 0,-999, 25,250, 100, 1);
+    Object orig = FileFloatSource.onlyForTesting;
+    singleTest(fieldAsFunc, "log(\0)");
+    // make sure the values were cached
+    assertTrue(orig == FileFloatSource.onlyForTesting);
+    singleTest(fieldAsFunc, "sqrt(\0)");
+    assertTrue(orig == FileFloatSource.onlyForTesting);
+
+    makeExternalFile(field, "0=1","UTF-8");
+    assertU(adoc("id", "10000")); // will get same reader if no index change
+    assertU(commit());   
+    singleTest(fieldAsFunc, "sqrt(\0)");
+    assertTrue(orig != FileFloatSource.onlyForTesting);
+
+    purgeFieldCache(FieldCache.DEFAULT);   // avoid FC insanity    
+  }
+
+  /**
+   * some platforms don't allow quote characters in filenames, so 
+   * in addition to testExternalFieldValueSourceParser above, test a field 
+   * name with quotes in it that does NOT use ExternalFileField
+   * @see #testExternalFieldValueSourceParser
+   */
+  @Test
+  public void testFieldValueSourceParser() {
+    clearIndex();
+
+    String field = "CoMpleX \" fieldName _f";
+    String fieldAsFunc = "field(\"CoMpleX \\\" fieldName _f\")";
+
+    float[] ids = {100,-4,0,10,25,5,77,1};
+
+    createIndex(field, ids);
+
+    // test identity (straight field value)
+    singleTest(fieldAsFunc, "\0", 
+               100,100,  -4,-4,  0,0,  10,10,  25,25,  5,5,  77,77,  1,1);
+    singleTest(fieldAsFunc, "sqrt(\0)", 
+               100,10,  25,5,  0,0,   1,1);
+    singleTest(fieldAsFunc, "log(\0)",  1,0);
+
+    purgeFieldCache(FieldCache.DEFAULT);   // avoid FC insanity    
+  }
 
 }

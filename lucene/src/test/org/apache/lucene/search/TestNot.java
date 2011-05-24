@@ -17,8 +17,6 @@ package org.apache.lucene.search;
  * limitations under the License.
  */
 
-import java.util.Random;
-
 import org.apache.lucene.util.LuceneTestCase;
 
 import org.apache.lucene.index.IndexReader;
@@ -35,23 +33,19 @@ import org.apache.lucene.document.Field;
  * @version $Revision$
  */
 public class TestNot extends LuceneTestCase {
-  public TestNot(String name) {
-    super(name);
-  }
 
   public void testNot() throws Exception {
-    Random random = newRandom();
-    Directory store = newDirectory(random);
+    Directory store = newDirectory();
     RandomIndexWriter writer = new RandomIndexWriter(random, store);
 
     Document d1 = new Document();
-    d1.add(new Field("field", "a b", Field.Store.YES, Field.Index.ANALYZED));
+    d1.add(newField("field", "a b", Field.Store.YES, Field.Index.ANALYZED));
 
     writer.addDocument(d1);
     IndexReader reader = writer.getReader();
 
-    Searcher searcher = new IndexSearcher(reader);
-      QueryParser parser = new QueryParser(TEST_VERSION_CURRENT, "field", new MockAnalyzer());
+    IndexSearcher searcher = newSearcher(reader);
+      QueryParser parser = new QueryParser(TEST_VERSION_CURRENT, "field", new MockAnalyzer(random));
     Query query = parser.parse("a NOT b");
     //System.out.println(query);
     ScoreDoc[] hits = searcher.search(query, null, 1000).scoreDocs;

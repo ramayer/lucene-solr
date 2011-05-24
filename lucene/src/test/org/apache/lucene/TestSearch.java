@@ -17,7 +17,6 @@ package org.apache.lucene;
  * limitations under the License.
  */
 
-import java.util.GregorianCalendar;
 import java.util.Random;
 import java.io.PrintWriter;
 import java.io.StringWriter;
@@ -51,7 +50,6 @@ public class TestSearch extends LuceneTestCase {
      *        single-file formats, even if the results are wrong.
      */
     public void testSearch() throws Exception {
-      Random random = newRandom();
       StringWriter sw = new StringWriter();
       PrintWriter pw = new PrintWriter(sw, true);
       doTestSearch(random, pw, false);
@@ -73,12 +71,14 @@ public class TestSearch extends LuceneTestCase {
 
     private void doTestSearch(Random random, PrintWriter out, boolean useCompoundFile)
     throws Exception {
-      Directory directory = newDirectory(random);
-      Analyzer analyzer = new MockAnalyzer();
-      IndexWriterConfig conf = newIndexWriterConfig(random, TEST_VERSION_CURRENT, analyzer);
-      LogMergePolicy lmp = (LogMergePolicy) conf.getMergePolicy();
-      lmp.setUseCompoundFile(useCompoundFile);
-      lmp.setUseCompoundDocStore(useCompoundFile);
+      Directory directory = newDirectory();
+      Analyzer analyzer = new MockAnalyzer(random);
+      IndexWriterConfig conf = newIndexWriterConfig(TEST_VERSION_CURRENT, analyzer);
+      MergePolicy mp = conf.getMergePolicy();
+      if (mp instanceof LogMergePolicy) {
+        ((LogMergePolicy) mp).setUseCompoundFile(useCompoundFile);
+      }
+      
       IndexWriter writer = new IndexWriter(directory, conf);
 
       String[] docs = {
@@ -92,12 +92,13 @@ public class TestSearch extends LuceneTestCase {
       };
       for (int j = 0; j < docs.length; j++) {
         Document d = new Document();
-        d.add(new Field("contents", docs[j], Field.Store.YES, Field.Index.ANALYZED));
+        d.add(newField("contents", docs[j], Field.Store.YES, Field.Index.ANALYZED));
+        d.add(newField("id", ""+j, Field.Index.NOT_ANALYZED_NO_NORMS));
         writer.addDocument(d);
       }
       writer.close();
 
-      Searcher searcher = new IndexSearcher(directory, true);
+      IndexSearcher searcher = new IndexSearcher(directory, true);
 
       String[] queries = {
         "a b",
@@ -109,35 +110,28 @@ public class TestSearch extends LuceneTestCase {
       };
       ScoreDoc[] hits = null;
 
+      Sort sort = new Sort(new SortField[] {
+          SortField.FIELD_SCORE,
+          new SortField("id", SortField.INT)});
+
       QueryParser parser = new QueryParser(TEST_VERSION_CURRENT, "contents", analyzer);
       parser.setPhraseSlop(4);
       for (int j = 0; j < queries.length; j++) {
         Query query = parser.parse(queries[j]);
         out.println("Query: " + query.toString("contents"));
+        if (VERBOSE) {
+          System.out.println("TEST: query=" + query);
+        }
 
-      //DateFilter filter =
-      //  new DateFilter("modified", Time(1997,0,1), Time(1998,0,1));
-      //DateFilter filter = DateFilter.Before("modified", Time(1997,00,01));
-      //System.out.println(filter);
-
-        hits = searcher.search(query, null, 1000).scoreDocs;
+        hits = searcher.search(query, null, 1000, sort).scoreDocs;
 
         out.println(hits.length + " total results");
         for (int i = 0 ; i < hits.length && i < 10; i++) {
           Document d = searcher.doc(hits[i].doc);
-          out.println(i + " " + hits[i].score
-// 			   + " " + DateField.stringToDate(d.get("modified"))
-                             + " " + d.get("contents"));
+          out.println(i + " " + hits[i].score + " " + d.get("contents"));
         }
       }
       searcher.close();
       directory.close();
-  }
-
-  static long Time(int year, int month, int day) {
-    GregorianCalendar calendar = new GregorianCalendar();
-    calendar.clear();
-    calendar.set(year, month, day);
-    return calendar.getTime().getTime();
   }
 }

@@ -31,9 +31,10 @@ import org.apache.commons.codec.language.Soundex;
 import org.apache.lucene.analysis.TokenStream;
 import org.apache.lucene.analysis.phonetic.PhoneticFilter;
 import org.apache.solr.common.SolrException;
-import org.apache.solr.common.util.StrUtils;
 
 /**
+ * Factory for {@link PhoneticFilter}.
+ * 
  * Create tokens based on phonetic encoders
  * 
  * http://jakarta.apache.org/commons/codec/api-release/org/apache/commons/codec/language/package-summary.html
@@ -42,6 +43,14 @@ import org.apache.solr.common.util.StrUtils;
  *  "encoder" required, one of "DoubleMetaphone", "Metaphone", "Soundex", "RefinedSoundex"
  * 
  * "inject" (default=true) add tokens to the stream with the offset=0
+ *
+ * <pre class="prettyprint" >
+ * &lt;fieldType name="text_phonetic" class="solr.TextField" positionIncrementGap="100"&gt;
+ *   &lt;analyzer&gt;
+ *     &lt;tokenizer class="solr.WhitespaceTokenizerFactory"/&gt;
+ *     &lt;filter class="solr.PhoneticFilterFactory" encoder="DoubleMetaphone" inject="true"/&gt;
+ *   &lt;/analyzer&gt;
+ * &lt;/fieldType&gt;</pre>
  * 
  * @version $Id$
  * @see PhoneticFilter

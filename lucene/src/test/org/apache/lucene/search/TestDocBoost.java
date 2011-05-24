@@ -18,14 +18,15 @@ package org.apache.lucene.search;
  */
 
 import java.io.IOException;
-import java.util.Random;
 
-import org.apache.lucene.util.LuceneTestCase;
+import org.apache.lucene.analysis.MockAnalyzer;
 import org.apache.lucene.document.*;
+import org.apache.lucene.index.IndexReader.AtomicReaderContext;
 import org.apache.lucene.index.IndexReader;
 import org.apache.lucene.index.RandomIndexWriter;
 import org.apache.lucene.index.Term;
 import org.apache.lucene.store.Directory;
+import org.apache.lucene.util.LuceneTestCase;
 
 /** Document boost unit test.
  *
@@ -33,17 +34,13 @@ import org.apache.lucene.store.Directory;
  * @version $Revision$
  */
 public class TestDocBoost extends LuceneTestCase {
-  public TestDocBoost(String name) {
-    super(name);
-  }
 
   public void testDocBoost() throws Exception {
-    Random random = newRandom();
-    Directory store = newDirectory(random);
-    RandomIndexWriter writer = new RandomIndexWriter(random, store);
+    Directory store = newDirectory();
+    RandomIndexWriter writer = new RandomIndexWriter(random, store, newIndexWriterConfig(TEST_VERSION_CURRENT, new MockAnalyzer(random)).setMergePolicy(newLogMergePolicy()));
 
-    Fieldable f1 = new Field("field", "word", Field.Store.YES, Field.Index.ANALYZED);
-    Fieldable f2 = new Field("field", "word", Field.Store.YES, Field.Index.ANALYZED);
+    Fieldable f1 = newField("field", "word", Field.Store.YES, Field.Index.ANALYZED);
+    Fieldable f2 = newField("field", "word", Field.Store.YES, Field.Index.ANALYZED);
     f2.setBoost(2.0f);
 
     Document d1 = new Document();
@@ -68,7 +65,7 @@ public class TestDocBoost extends LuceneTestCase {
 
     final float[] scores = new float[4];
 
-    new IndexSearcher(reader).search
+    newSearcher(reader).search
       (new TermQuery(new Term("field", "word")),
        new Collector() {
          private int base = 0;
@@ -82,8 +79,8 @@ public class TestDocBoost extends LuceneTestCase {
            scores[doc + base] = scorer.score();
          }
          @Override
-         public void setNextReader(IndexReader reader, int docBase) {
-           base = docBase;
+         public void setNextReader(AtomicReaderContext context) {
+           base = context.docBase;
          }
          @Override
          public boolean acceptsDocsOutOfOrder() {

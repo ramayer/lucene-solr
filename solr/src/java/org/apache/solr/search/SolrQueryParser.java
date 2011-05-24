@@ -25,7 +25,12 @@ import org.apache.lucene.index.Term;
 import org.apache.lucene.queryParser.ParseException;
 import org.apache.lucene.queryParser.QueryParser;
 import org.apache.lucene.search.*;
+import org.apache.lucene.util.ToStringUtils;
 import org.apache.lucene.util.Version;
+import org.apache.lucene.util.automaton.Automaton;
+import org.apache.lucene.util.automaton.BasicAutomata;
+import org.apache.lucene.util.automaton.BasicOperations;
+import org.apache.lucene.util.automaton.SpecialOperations;
 import org.apache.lucene.analysis.Analyzer;
 import org.apache.solr.analysis.*;
 import org.apache.solr.common.SolrException;
@@ -34,9 +39,6 @@ import org.apache.solr.schema.IndexSchema;
 import org.apache.solr.schema.SchemaField;
 import org.apache.solr.schema.TextField;
 
-// TODO: implement the analysis of simple fields with
-// FieldType.toInternal() instead of going through the
-// analyzer.  Should lead to faster query parsing.
 
 /**
  * A variation on the Lucene QueryParser which knows about the field 
@@ -52,8 +54,6 @@ import org.apache.solr.schema.TextField;
  * If the magic field name "<code>_val_</code>" is used in a term or 
  * phrase query, the value is parsed as a function.
  * </p>
- *
- * @see QueryParsing#parseFunction
  */
 public class SolrQueryParser extends QueryParser {
   protected final IndexSchema schema;
@@ -62,32 +62,12 @@ public class SolrQueryParser extends QueryParser {
   protected final Map<String, ReversedWildcardFilterFactory> leadingWildcards =
     new HashMap<String, ReversedWildcardFilterFactory>();
 
-  /**
-   * Constructs a SolrQueryParser using the schema to understand the
-   * formats and datatypes of each field.  Only the defaultSearchField
-   * will be used from the IndexSchema (unless overridden),
-   * &lt;solrQueryParser&gt; will not be used.
-   * 
-   * @param schema Used for default search field name if defaultField is null and field information is used for analysis
-   * @param defaultField default field used for unspecified search terms.  if null, the schema default field is used
-   * @see IndexSchema#getDefaultSearchFieldName()
-   */
-  public SolrQueryParser(IndexSchema schema, String defaultField) {
-    super(schema.getSolrConfig().getLuceneVersion("luceneMatchVersion", Version.LUCENE_24), defaultField == null ? schema.getDefaultSearchFieldName() : defaultField, schema.getQueryAnalyzer());
-    this.schema = schema;
-    this.parser  = null;
-    this.defaultField = defaultField;
-    setLowercaseExpandedTerms(false);
-    setEnablePositionIncrements(true);
-    checkAllowLeadingWildcards();
-  }
-
   public SolrQueryParser(QParser parser, String defaultField) {
     this(parser, defaultField, parser.getReq().getSchema().getQueryAnalyzer());
   }
 
   public SolrQueryParser(QParser parser, String defaultField, Analyzer analyzer) {
-    super(parser.getReq().getSchema().getSolrConfig().getLuceneVersion("luceneMatchVersion", Version.LUCENE_24), defaultField, analyzer);
+    super(parser.getReq().getCore().getSolrConfig().luceneMatchVersion, defaultField, analyzer);
     this.schema = parser.getReq().getSchema();
     this.parser = parser;
     this.defaultField = defaultField;
@@ -126,18 +106,15 @@ public class SolrQueryParser extends QueryParser {
     }
   }
 
+  @Override
   protected Query getFieldQuery(String field, String queryText, boolean quoted) throws ParseException {
     checkNullField(field);
     // intercept magic field name of "_" to use as a hook for our
     // own functions.
     if (field.charAt(0) == '_') {
       if ("_val_".equals(field)) {
-        if (parser==null) {
-          return QueryParsing.parseFunction(queryText, schema);
-        } else {
-          QParser nested = parser.subQuery(queryText, "func");
-          return nested.getQuery();
-        }
+        QParser nested = parser.subQuery(queryText, "func");
+        return nested.getQuery();
       } else if ("_query_".equals(field) && parser != null) {
         return parser.subQuery(queryText, null).getQuery();
       }
@@ -145,9 +122,9 @@ public class SolrQueryParser extends QueryParser {
     SchemaField sf = schema.getFieldOrNull(field);
     if (sf != null) {
       FieldType ft = sf.getType();
-      // delegate to type for everything except TextField
-      if (ft instanceof TextField) {
-        return super.getFieldQuery(field, queryText, quoted || ((TextField)ft).getAutoGeneratePhraseQueries());
+      // delegate to type for everything except tokenized fields
+      if (ft.isTokenized()) {
+        return super.getFieldQuery(field, queryText, quoted || (ft instanceof TextField && ((TextField)ft).getAutoGeneratePhraseQueries()));
       } else {
         return sf.getType().getFieldQuery(parser, sf, queryText);
       }
@@ -157,15 +134,14 @@ public class SolrQueryParser extends QueryParser {
     return super.getFieldQuery(field, queryText, quoted);
   }
 
-  protected Query getRangeQuery(String field, String part1, String part2, boolean inclusive) throws ParseException {
+  @Override
+  protected Query getRangeQuery(String field, String part1, String part2, boolean startInclusive, boolean endInclusive) throws ParseException {
     checkNullField(field);
     SchemaField sf = schema.getField(field);
-    return sf.getType().getRangeQuery(parser, sf,
-            "*".equals(part1) ? null : part1,
-            "*".equals(part2) ? null : part2,
-            inclusive, inclusive);
+    return sf.getType().getRangeQuery(parser, sf, part1, part2, startInclusive, endInclusive);
   }
 
+  @Override
   protected Query getPrefixQuery(String field, String termStr) throws ParseException {
     checkNullField(field);
     if (getLowercaseExpandedTerms()) {
@@ -187,6 +163,7 @@ public class SolrQueryParser extends QueryParser {
     return prefixQuery;
   }
 
+  @Override
   protected Query getWildcardQuery(String field, String termStr) throws ParseException {
     // *:* -> MatchAllDocsQuery
     if ("*".equals(field) && "*".equals(termStr)) {
@@ -196,13 +173,37 @@ public class SolrQueryParser extends QueryParser {
     // can we use reversed wildcards in this field?
     String type = schema.getFieldType(field).getTypeName();
     ReversedWildcardFilterFactory factory = leadingWildcards.get(type);
-    if (factory != null && factory.shouldReverse(termStr)) {
-      int len = termStr.length();
-      char[] chars = new char[len+1];
-      chars[0] = factory.getMarkerChar();      
-      termStr.getChars(0, len, chars, 1);
-      ReversedWildcardFilter.reverse(chars, 1, len);
-      termStr = new String(chars);
+    if (factory != null) {
+      Term term = new Term(field, termStr);
+      // fsa representing the query
+      Automaton automaton = WildcardQuery.toAutomaton(term);
+      // TODO: we should likely use the automaton to calculate shouldReverse, too.
+      if (factory.shouldReverse(termStr)) {
+        automaton = BasicOperations.concatenate(automaton, BasicAutomata.makeChar(factory.getMarkerChar()));
+        SpecialOperations.reverse(automaton);
+      } else { 
+        // reverse wildcardfilter is active: remove false positives
+        // fsa representing false positives (markerChar*)
+        Automaton falsePositives = BasicOperations.concatenate(
+            BasicAutomata.makeChar(factory.getMarkerChar()), 
+            BasicAutomata.makeAnyString());
+        // subtract these away
+        automaton = BasicOperations.minus(automaton, falsePositives);
+      }
+      return new AutomatonQuery(term, automaton) {
+        // override toString so its completely transparent
+        @Override
+        public String toString(String field) {
+          StringBuilder buffer = new StringBuilder();
+          if (!getField().equals(field)) {
+            buffer.append(getField());
+            buffer.append(":");
+          }
+          buffer.append(term.text());
+          buffer.append(ToStringUtils.boost(getBoost()));
+          return buffer.toString();
+        }
+      };
     }
     Query q = super.getWildcardQuery(field, termStr);
     if (q instanceof WildcardQuery) {

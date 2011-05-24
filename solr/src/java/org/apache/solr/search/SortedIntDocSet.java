@@ -22,6 +22,7 @@ import org.apache.lucene.search.DocIdSet;
 import org.apache.lucene.search.DocIdSetIterator;
 import org.apache.lucene.search.Filter;
 import org.apache.lucene.index.IndexReader;
+import org.apache.lucene.index.IndexReader.AtomicReaderContext;
 
 import java.io.IOException;
 
@@ -165,6 +166,59 @@ public class SortedIntDocSet extends DocSetBase {
     return icount;
   }
 
+
+  public static boolean intersects(int[] smallerSortedList, int[] biggerSortedList) {
+    // see intersectionSize for more in-depth comments of this algorithm
+
+    final int a[] = smallerSortedList;
+    final int b[] = biggerSortedList;
+
+    int step = (b.length/a.length)+1;
+
+    step = step + step;
+
+    int low = 0;
+    int max = b.length-1;
+
+    for (int i=0; i<a.length; i++) {
+      int doca = a[i];
+      int high = max;
+      int probe = low + step;
+      if (probe<high) {
+        if (b[probe]>=doca) {
+          high=probe;
+        } else {
+          low=probe+1;
+          probe = low + step;
+          if (probe<high) {
+            if (b[probe]>=doca) {
+              high=probe;
+            } else {
+              low=probe+1;
+            }
+          }
+        }
+      }
+
+      while (low <= high) {
+        int mid = (low+high) >>> 1;
+        int docb = b[mid];
+
+        if (docb < doca) {
+          low = mid+1;
+        }
+        else if (docb > doca) {
+          high = mid-1;
+        }
+        else {
+          return true;
+        }
+      }
+    }
+
+    return false;
+  }
+
   public int intersectionSize(DocSet other) {
     if (!(other instanceof SortedIntDocSet)) {
       // assume other implementations are better at random access than we are,
@@ -214,6 +268,49 @@ public class SortedIntDocSet extends DocSetBase {
     return icount;
   }
 
+  @Override
+  public boolean intersects(DocSet other) {
+    if (!(other instanceof SortedIntDocSet)) {
+      // assume other implementations are better at random access than we are,
+      // true of BitDocSet and HashDocSet.
+      for (int i=0; i<docs.length; i++) {
+        if (other.exists(docs[i])) return true;
+      }
+      return false;
+    }
+
+    // make "a" the smaller set.
+    int[] otherDocs = ((SortedIntDocSet)other).docs;
+    final int[] a = docs.length < otherDocs.length ? docs : otherDocs;
+    final int[] b = docs.length < otherDocs.length ? otherDocs : docs;
+
+    if (a.length==0) return false;
+
+    // if b is 8 times bigger than a, use the modified binary search.
+    if ((b.length>>3) >= a.length) {
+      return intersects(a,b);
+    }
+
+    // if they are close in size, just do a linear walk of both.
+    int i=0,j=0;
+    int doca=a[i],docb=b[j];
+    for(;;) {
+      // switch on the sign bit somehow?  Hopefull JVM is smart enough to just test once.
+
+      // Since set a is less dense then set b, doca is likely to be greater than docb so
+      // check that case first.  This resulted in a 13% speedup.
+      if (doca > docb) {
+        if (++j >= b.length) break;
+        docb=b[j];
+      } else if (doca < docb) {
+        if (++i >= a.length) break;
+        doca=a[i];
+      } else {
+        return true;
+      }
+    }
+    return false;
+  }
 
   /** puts the intersection of a and b into the target array and returns the size */
   public static int intersection(int a[], int lena, int b[], int lenb, int[] target) {
@@ -462,6 +559,13 @@ public class SortedIntDocSet extends DocSetBase {
     return new SortedIntDocSet(arr,sz);
   }
 
+  @Override
+  public void setBitsOn(OpenBitSet target) {
+    for (int doc : docs) {
+      target.fastSet(doc);
+    }
+  }
+
 
   public boolean exists(int doc) {
     // this could be faster by estimating where in the list the doc is likely to appear,
@@ -551,14 +655,10 @@ public class SortedIntDocSet extends DocSetBase {
       int lastEndIdx = 0;
 
       @Override
-      public DocIdSet getDocIdSet(IndexReader reader) throws IOException {
-        int offset = 0;
-        SolrIndexReader r = (SolrIndexReader)reader;
-        while (r.getParent() != null) {
-          offset += r.getBase();
-          r = r.getParent();
-        }
-        final int base = offset;
+      public DocIdSet getDocIdSet(AtomicReaderContext context) throws IOException {
+        IndexReader reader = context.reader;
+
+        final int base = context.docBase;
         final int maxDoc = reader.maxDoc();
         final int max = base + maxDoc;   // one past the max doc in this segment.
         int sidx = Math.max(0,lastEndIdx);
@@ -589,6 +689,7 @@ public class SortedIntDocSet extends DocSetBase {
 
 
         return new DocIdSet() {
+          @Override
           public DocIdSetIterator iterator() throws IOException {
             return new DocIdSetIterator() {
               int idx = startIdx;
@@ -655,4 +756,8 @@ public class SortedIntDocSet extends DocSetBase {
     };
   }
 
+  @Override
+  protected SortedIntDocSet clone() {
+    return new SortedIntDocSet(docs.clone());
+  }
 }

@@ -19,8 +19,8 @@ package org.apache.lucene.analysis.core;
 
 import java.io.Reader;
 
-import org.apache.lucene.analysis.CharTokenizer;
 import org.apache.lucene.analysis.Tokenizer;
+import org.apache.lucene.analysis.util.CharTokenizer;
 import org.apache.lucene.util.AttributeSource;
 import org.apache.lucene.util.Version;
 
@@ -78,40 +78,6 @@ public final class WhitespaceTokenizer extends CharTokenizer {
    */
   public WhitespaceTokenizer(Version matchVersion, AttributeFactory factory, Reader in) {
     super(matchVersion, factory, in);
-  }
-  
-  /**
-   * Construct a new WhitespaceTokenizer.
-   * 
-   * @deprecated use {@link #WhitespaceTokenizer(Version, Reader)} instead. This will
-   *             be removed in Lucene 4.0.
-   */
-  @Deprecated
-  public WhitespaceTokenizer(Reader in) {
-    super(in);
-  }
-
-  /**
-   * Construct a new WhitespaceTokenizer using a given {@link AttributeSource}.
-   * 
-   * @deprecated use {@link #WhitespaceTokenizer(Version, AttributeSource, Reader)}
-   *             instead. This will be removed in Lucene 4.0.
-   */
-  @Deprecated
-  public WhitespaceTokenizer(AttributeSource source, Reader in) {
-    super(source, in);
-  }
-
-  /**
-   * Construct a new WhitespaceTokenizer using a given
-   * {@link org.apache.lucene.util.AttributeSource.AttributeFactory}.
-   * 
-   * @deprecated use {@link #WhitespaceTokenizer(Version, AttributeSource.AttributeFactory, Reader)}
-   *             instead. This will be removed in Lucene 4.0.
-   */
-  @Deprecated
-  public WhitespaceTokenizer(AttributeFactory factory, Reader in) {
-    super(factory, in);
   }
   
   /** Collects only characters which do not satisfy

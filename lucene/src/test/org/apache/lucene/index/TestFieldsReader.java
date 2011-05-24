@@ -19,25 +19,22 @@ package org.apache.lucene.index;
 
 import java.io.File;
 import java.io.IOException;
-import java.util.Collections;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Random;
-import java.util.Set;
+import java.util.*;
 
 import org.apache.lucene.analysis.MockAnalyzer;
 import org.apache.lucene.document.Document;
 import org.apache.lucene.document.Field;
+import org.apache.lucene.document.NumericField;
 import org.apache.lucene.document.FieldSelector;
 import org.apache.lucene.document.FieldSelectorResult;
 import org.apache.lucene.document.Fieldable;
 import org.apache.lucene.document.LoadFirstFieldSelector;
 import org.apache.lucene.document.SetBasedFieldSelector;
 import org.apache.lucene.index.IndexWriterConfig.OpenMode;
+import org.apache.lucene.search.FieldCache;
 import org.apache.lucene.store.AlreadyClosedException;
 import org.apache.lucene.store.BufferedIndexInput;
 import org.apache.lucene.store.Directory;
-import org.apache.lucene.store.FSDirectory;
 import org.apache.lucene.store.IndexInput;
 import org.apache.lucene.store.IndexOutput;
 import org.apache.lucene.util.LuceneTestCase;
@@ -47,31 +44,25 @@ public class TestFieldsReader extends LuceneTestCase {
   private Directory dir;
   private Document testDoc = new Document();
   private FieldInfos fieldInfos = null;
-  private Random random;
   private final static String TEST_SEGMENT_NAME = "_0";
 
-  public TestFieldsReader(String s) {
-    super(s);
-  }
-
   @Override
-  protected void setUp() throws Exception {
+  public void setUp() throws Exception {
     super.setUp();
     fieldInfos = new FieldInfos();
     DocHelper.setupDoc(testDoc);
-    fieldInfos.add(testDoc);
-    random = newRandom();
-    dir = newDirectory(random);
-    IndexWriterConfig conf = newIndexWriterConfig(random, TEST_VERSION_CURRENT, new MockAnalyzer());
+    _TestUtil.add(testDoc, fieldInfos);
+    dir = newDirectory();
+    IndexWriterConfig conf = newIndexWriterConfig(TEST_VERSION_CURRENT, new MockAnalyzer(random)).setMergePolicy(newLogMergePolicy());
     ((LogMergePolicy) conf.getMergePolicy()).setUseCompoundFile(false);
-    ((LogMergePolicy) conf.getMergePolicy()).setUseCompoundDocStore(false);
     IndexWriter writer = new IndexWriter(dir, conf);
     writer.addDocument(testDoc);
     writer.close();
+    FaultyIndexInput.doFail = false;
   }
 
   @Override
-  protected void tearDown() throws Exception {
+  public void tearDown() throws Exception {
     dir.close();
     super.tearDown();
   }
@@ -169,7 +160,6 @@ public class TestFieldsReader extends LuceneTestCase {
     assertTrue(dir != null);
     assertTrue(fieldInfos != null);
     FieldsReader reader = new FieldsReader(dir, TEST_SEGMENT_NAME, fieldInfos);
-    assertTrue(reader != null);
     assertTrue(reader.size() == 1);
     Set<String> loadFieldNames = new HashSet<String>();
     loadFieldNames.add(DocHelper.TEXT_FIELD_1_KEY);
@@ -183,6 +173,7 @@ public class TestFieldsReader extends LuceneTestCase {
 
     // Use LATENT instead of LAZY
     SetBasedFieldSelector fieldSelector = new SetBasedFieldSelector(loadFieldNames, lazyFieldNames) {
+        @Override
         public FieldSelectorResult accept(String fieldName) {
           final FieldSelectorResult result = super.accept(fieldName);
           if (result == FieldSelectorResult.LAZY_LOAD) {
@@ -297,12 +288,11 @@ public class TestFieldsReader extends LuceneTestCase {
    */
   public void testLazyPerformance() throws Exception {
     String userName = System.getProperty("user.name");
-    File file = new File(TEMP_DIR, "lazyDir" + userName);
-    _TestUtil.rmDir(file);
-    FSDirectory tmpDir = FSDirectory.open(file);
+    File file = _TestUtil.getTempDir("lazyDir" + userName);
+    Directory tmpDir = newFSDirectory(file);
     assertTrue(tmpDir != null);
 
-    IndexWriterConfig conf = newIndexWriterConfig(random, TEST_VERSION_CURRENT, new MockAnalyzer()).setOpenMode(OpenMode.CREATE);
+    IndexWriterConfig conf = newIndexWriterConfig(TEST_VERSION_CURRENT, new MockAnalyzer(random)).setOpenMode(OpenMode.CREATE).setMergePolicy(newLogMergePolicy());
     ((LogMergePolicy) conf.getMergePolicy()).setUseCompoundFile(false);
     IndexWriter writer = new IndexWriter(tmpDir, conf);
     writer.addDocument(testDoc);
@@ -354,6 +344,7 @@ public class TestFieldsReader extends LuceneTestCase {
       reader.close();
 
     }
+    tmpDir.close();
     if (VERBOSE) {
       System.out.println("Average Non-lazy time (should be very close to zero): " + regularTime / length + " ms for " + length + " reads");
       System.out.println("Average Lazy Time (should be greater than zero): " + lazyTime / length + " ms for " + length + " reads");
@@ -397,9 +388,10 @@ public class TestFieldsReader extends LuceneTestCase {
 
   public static class FaultyFSDirectory extends Directory {
 
-    FSDirectory fsDir;
+    Directory fsDir;
+    
     public FaultyFSDirectory(File dir) throws IOException {
-      fsDir = FSDirectory.open(dir);
+      fsDir = newFSDirectory(dir);
       lockFactory = fsDir.getLockFactory();
     }
     @Override
@@ -419,10 +411,6 @@ public class TestFieldsReader extends LuceneTestCase {
       return fsDir.fileModified(name);
     }
     @Override
-    public void touchFile(String name) throws IOException {
-      fsDir.touchFile(name);
-    }
-    @Override
     public void deleteFile(String name) throws IOException {
       fsDir.deleteFile(name);
     }
@@ -433,6 +421,10 @@ public class TestFieldsReader extends LuceneTestCase {
     @Override
     public IndexOutput createOutput(String name) throws IOException {
       return fsDir.createOutput(name);
+    }
+    @Override
+    public void sync(Collection<String> names) throws IOException {
+      fsDir.sync(names);
     }
     @Override
     public void close() throws IOException {
@@ -478,12 +470,12 @@ public class TestFieldsReader extends LuceneTestCase {
 
   // LUCENE-1262
   public void testExceptions() throws Throwable {
-    File indexDir = new File(TEMP_DIR, "testfieldswriterexceptions");
+    File indexDir = _TestUtil.getTempDir("testfieldswriterexceptions");
 
     try {
       Directory dir = new FaultyFSDirectory(indexDir);
-      IndexWriter writer = new IndexWriter(dir, newIndexWriterConfig(random, 
-          TEST_VERSION_CURRENT, new MockAnalyzer()).setOpenMode(OpenMode.CREATE));
+      IndexWriter writer = new IndexWriter(dir, newIndexWriterConfig( 
+          TEST_VERSION_CURRENT, new MockAnalyzer(random)).setOpenMode(OpenMode.CREATE));
       for(int i=0;i<2;i++)
         writer.addDocument(testDoc);
       writer.optimize();
@@ -517,4 +509,69 @@ public class TestFieldsReader extends LuceneTestCase {
     }
 
   }
+  
+  public void testNumericField() throws Exception {
+    Directory dir = newDirectory();
+    RandomIndexWriter w = new RandomIndexWriter(random, dir);
+    final int numDocs = _TestUtil.nextInt(random, 500, 1000) * RANDOM_MULTIPLIER;
+    final Number[] answers = new Number[numDocs];
+    final NumericField.DataType[] typeAnswers = new NumericField.DataType[numDocs];
+    for(int id=0;id<numDocs;id++) {
+      Document doc = new Document();
+      NumericField nf = new NumericField("nf", Field.Store.YES, false);
+      doc.add(nf);
+      final Number answer;
+      final NumericField.DataType typeAnswer;
+      if (random.nextBoolean()) {
+        // float/double
+        if (random.nextBoolean()) {
+          final float f = random.nextFloat();
+          nf.setFloatValue(f);
+          answer = Float.valueOf(f);
+          typeAnswer = NumericField.DataType.FLOAT;
+        } else {
+          final double d = random.nextDouble();
+          nf.setDoubleValue(d);
+          answer = Double.valueOf(d);
+          typeAnswer = NumericField.DataType.DOUBLE;
+        }
+      } else {
+        // int/long
+        if (random.nextBoolean()) {
+          final int i = random.nextInt();
+          nf.setIntValue(i);
+          answer = Integer.valueOf(i);
+          typeAnswer = NumericField.DataType.INT;
+        } else {
+          final long l = random.nextLong();
+          nf.setLongValue(l);
+          answer = Long.valueOf(l);
+          typeAnswer = NumericField.DataType.LONG;
+        }
+      }
+      answers[id] = answer;
+      typeAnswers[id] = typeAnswer;
+      doc.add(new NumericField("id", Integer.MAX_VALUE, Field.Store.NO, true).setIntValue(id));
+      w.addDocument(doc);
+    }
+    final IndexReader r = w.getReader();
+    w.close();
+    
+    assertEquals(numDocs, r.numDocs());
+
+    for(IndexReader sub : r.getSequentialSubReaders()) {
+      final int[] ids = FieldCache.DEFAULT.getInts(sub, "id");
+      for(int docID=0;docID<sub.numDocs();docID++) {
+        final Document doc = sub.document(docID);
+        final Fieldable f = doc.getFieldable("nf");
+        assertTrue("got f=" + f, f instanceof NumericField);
+        final NumericField nf = (NumericField) f;
+        assertEquals(answers[ids[docID]], nf.getNumericValue());
+        assertSame(typeAnswers[ids[docID]], nf.getDataType());
+      }
+    }
+    r.close();
+    dir.close();
+  }
+  
 }

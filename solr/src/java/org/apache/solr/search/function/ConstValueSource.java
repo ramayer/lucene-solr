@@ -17,7 +17,7 @@
 
 package org.apache.solr.search.function;
 
-import org.apache.lucene.index.IndexReader;
+import org.apache.lucene.index.IndexReader.AtomicReaderContext;
 
 import java.io.IOException;
 import java.util.Map;
@@ -25,7 +25,7 @@ import java.util.Map;
 /**
  * <code>ConstValueSource</code> returns a constant for all documents
  */
-public class ConstValueSource extends ValueSource {
+public class ConstValueSource extends ConstNumberSource {
   final float constant;
   private final double dv;
 
@@ -34,40 +34,75 @@ public class ConstValueSource extends ValueSource {
     this.dv = constant;
   }
 
+  @Override
   public String description() {
     return "const(" + constant + ")";
   }
 
-  public DocValues getValues(Map context, IndexReader reader) throws IOException {
-    return new DocValues() {
+  @Override
+  public DocValues getValues(Map context, AtomicReaderContext readerContext) throws IOException {
+    return new FloatDocValues(this) {
+      @Override
       public float floatVal(int doc) {
         return constant;
       }
+      @Override
       public int intVal(int doc) {
         return (int)constant;
       }
+      @Override
       public long longVal(int doc) {
         return (long)constant;
       }
+      @Override
       public double doubleVal(int doc) {
         return dv;
       }
-      public String strVal(int doc) {
-        return Float.toString(constant);
-      }
+      @Override
       public String toString(int doc) {
         return description();
+      }
+      @Override
+      public Object objectVal(int doc) {
+        return constant;
       }
     };
   }
 
+  @Override
   public int hashCode() {
     return Float.floatToIntBits(constant) * 31;
   }
 
+  @Override
   public boolean equals(Object o) {
-    if (ConstValueSource.class != o.getClass()) return false;
+    if (!(o instanceof ConstValueSource)) return false;
     ConstValueSource other = (ConstValueSource)o;
     return  this.constant == other.constant;
+  }
+
+  @Override
+  public int getInt() {
+    return (int)constant;
+  }
+
+  @Override
+  public long getLong() {
+    return (long)constant;
+  }
+
+  @Override
+  public float getFloat() {
+    return constant;
+  }
+
+  @Override
+  public double getDouble() {
+    return dv;
+  }
+
+  @Override
+  public Number getNumber() {
+    return constant;
   }
 }

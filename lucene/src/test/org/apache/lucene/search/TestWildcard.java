@@ -24,24 +24,23 @@ import org.apache.lucene.document.Document;
 import org.apache.lucene.document.Field;
 import org.apache.lucene.document.Field.Store;
 import org.apache.lucene.document.Field.Index;
+import org.apache.lucene.index.MultiFields;
 import org.apache.lucene.index.RandomIndexWriter;
 import org.apache.lucene.index.Term;
+import org.apache.lucene.index.Terms;
 import org.apache.lucene.queryParser.QueryParser;
 
 import java.io.IOException;
-import java.util.Random;
 
 /**
  * TestWildcard tests the '*' and '?' wildcard characters.
  */
 public class TestWildcard
     extends LuceneTestCase {
-  private Random random;
   
   @Override
   public void setUp() throws Exception {
     super.setUp();
-    random = newRandom();
   }
 
   public void testEquals() {
@@ -131,13 +130,13 @@ public class TestWildcard
 
     MultiTermQuery wq = new WildcardQuery(new Term("field", "prefix*"));
     assertMatches(searcher, wq, 2);
-    
-    assertTrue(wq.getTermsEnum(searcher.getIndexReader()) instanceof PrefixTermsEnum);
+    Terms terms = MultiFields.getTerms(searcher.getIndexReader(), "field");
+    assertTrue(wq.getTermsEnum(terms) instanceof PrefixTermsEnum);
     
     wq = new WildcardQuery(new Term("field", "*"));
     assertMatches(searcher, wq, 2);
-    assertFalse(wq.getTermsEnum(searcher.getIndexReader()) instanceof PrefixTermsEnum);
-    assertFalse(wq.getTermsEnum(searcher.getIndexReader()) instanceof AutomatonTermsEnum);
+    assertFalse(wq.getTermsEnum(terms) instanceof PrefixTermsEnum);
+    assertFalse(wq.getTermsEnum(terms) instanceof AutomatonTermsEnum);
     searcher.close();
     indexStore.close();
   }
@@ -208,13 +207,45 @@ public class TestWildcard
     indexStore.close();
   }
 
+  /**
+   * Tests if wildcard escaping works
+   */
+  public void testEscapes() throws Exception {
+    Directory indexStore = getIndexStore("field", 
+        new String[]{"foo*bar", "foo??bar", "fooCDbar", "fooSOMETHINGbar", "foo\\"});
+    IndexSearcher searcher = new IndexSearcher(indexStore, true);
+
+    // without escape: matches foo??bar, fooCDbar, foo*bar, and fooSOMETHINGbar
+    WildcardQuery unescaped = new WildcardQuery(new Term("field", "foo*bar"));
+    assertMatches(searcher, unescaped, 4);
+    
+    // with escape: only matches foo*bar
+    WildcardQuery escaped = new WildcardQuery(new Term("field", "foo\\*bar"));
+    assertMatches(searcher, escaped, 1);
+    
+    // without escape: matches foo??bar and fooCDbar
+    unescaped = new WildcardQuery(new Term("field", "foo??bar"));
+    assertMatches(searcher, unescaped, 2);
+    
+    // with escape: matches foo??bar only
+    escaped = new WildcardQuery(new Term("field", "foo\\?\\?bar"));
+    assertMatches(searcher, escaped, 1);
+    
+    // check escaping at end: lenient parse yields "foo\"
+    WildcardQuery atEnd = new WildcardQuery(new Term("field", "foo\\"));
+    assertMatches(searcher, atEnd, 1);
+    
+    searcher.close();
+    indexStore.close();
+  }
+  
   private Directory getIndexStore(String field, String[] contents)
       throws IOException {
-    Directory indexStore = newDirectory(random);
+    Directory indexStore = newDirectory();
     RandomIndexWriter writer = new RandomIndexWriter(random, indexStore);
     for (int i = 0; i < contents.length; ++i) {
       Document doc = new Document();
-      doc.add(new Field(field, contents[i], Field.Store.YES, Field.Index.ANALYZED));
+      doc.add(newField(field, contents[i], Field.Store.YES, Field.Index.ANALYZED));
       writer.addDocument(doc);
     }
     writer.close();
@@ -237,7 +268,7 @@ public class TestWildcard
    */
   public void testParsingAndSearching() throws Exception {
     String field = "content";
-    QueryParser qp = new QueryParser(TEST_VERSION_CURRENT, field, new MockAnalyzer());
+    QueryParser qp = new QueryParser(TEST_VERSION_CURRENT, field, new MockAnalyzer(random));
     qp.setAllowLeadingWildcard(true);
     String docs[] = {
         "\\ abcdefg1",
@@ -266,11 +297,13 @@ public class TestWildcard
     };
 
     // prepare the index
-    Directory dir = newDirectory(random);
-    RandomIndexWriter iw = new RandomIndexWriter(random, dir);
+    Directory dir = newDirectory();
+    RandomIndexWriter iw = new RandomIndexWriter(random, dir, 
+        newIndexWriterConfig(TEST_VERSION_CURRENT, new MockAnalyzer(random))
+        .setMergePolicy(newLogMergePolicy()));
     for (int i = 0; i < docs.length; i++) {
       Document doc = new Document();
-      doc.add(new Field(field,docs[i],Store.NO,Index.ANALYZED));
+      doc.add(newField(field,docs[i],Store.NO,Index.ANALYZED));
       iw.addDocument(doc);
     }
     iw.close();

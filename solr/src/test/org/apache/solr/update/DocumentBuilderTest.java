@@ -26,8 +26,6 @@ import org.apache.solr.schema.FieldType;
 import org.junit.BeforeClass;
 import org.junit.Test;
 
-import static org.junit.Assert.*;
-
 /**
  * 
  *
@@ -69,6 +67,40 @@ public class DocumentBuilderTest extends SolrTestCaseJ4 {
   }
 
   @Test
+  public void testExceptions() 
+  {
+    SolrCore core = h.getCore();
+    
+    // make sure a null value is not indexed
+    SolrInputDocument doc = new SolrInputDocument();
+    doc.addField( "id", "123", 1.0f );
+    doc.addField( "unknown", "something", 1.0f );
+    try {
+      DocumentBuilder.toDocument( doc, core.getSchema() );
+      fail( "added an unknown field" );
+    }
+    catch( Exception ex ) {
+      assertTrue( "should have document ID", ex.getMessage().indexOf( "doc=123" ) > 0 );
+    }
+    doc.remove( "unknown" );
+    
+
+    doc.addField( "weight", "not a number", 1.0f );
+    try {
+      DocumentBuilder.toDocument( doc, core.getSchema() );
+      fail( "invalid 'float' field value" );
+    }
+    catch( Exception ex ) {
+      assertTrue( "should have document ID", ex.getMessage().indexOf( "doc=123" ) > 0 );
+      assertTrue( "cause is number format", ex.getCause() instanceof NumberFormatException );
+    }
+    
+    // now make sure it is OK
+    doc.setField( "weight", "1.34", 1.0f );
+    DocumentBuilder.toDocument( doc, core.getSchema() );
+  }
+
+  @Test
   public void testMultiField() throws Exception {
     SolrCore core = h.getCore();
 
@@ -77,8 +109,8 @@ public class DocumentBuilderTest extends SolrTestCaseJ4 {
     doc.addField( "home", "2.2,3.3", 1.0f );
     Document out = DocumentBuilder.toDocument( doc, core.getSchema() );
     assertNotNull( out.get( "home" ) );//contains the stored value and term vector, if there is one
-    assertNotNull( out.getField( "home_0" + FieldType.POLY_FIELD_SEPARATOR + "double" ) );
-    assertNotNull( out.getField( "home_1" + FieldType.POLY_FIELD_SEPARATOR + "double" ) );
+    assertNotNull( out.getFieldable( "home_0" + FieldType.POLY_FIELD_SEPARATOR + "double" ) );
+    assertNotNull( out.getFieldable( "home_1" + FieldType.POLY_FIELD_SEPARATOR + "double" ) );
   }
 
 }

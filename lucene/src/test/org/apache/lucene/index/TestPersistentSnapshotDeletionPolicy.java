@@ -17,8 +17,6 @@ package org.apache.lucene.index;
  * the License.
  */
 
-import static org.junit.Assert.*;
-
 import java.io.IOException;
 import java.util.Map;
 import java.util.Map.Entry;
@@ -39,7 +37,7 @@ public class TestPersistentSnapshotDeletionPolicy extends TestSnapshotDeletionPo
   @Override
   public void setUp() throws Exception {
     super.setUp();
-    snapshotDir = newDirectory(random);
+    snapshotDir = newDirectory();
   }
   
   @After
@@ -52,7 +50,7 @@ public class TestPersistentSnapshotDeletionPolicy extends TestSnapshotDeletionPo
   @Override
   protected SnapshotDeletionPolicy getDeletionPolicy() throws IOException {
     snapshotDir.close();
-    snapshotDir = newDirectory(random);
+    snapshotDir = newDirectory();
     return new PersistentSnapshotDeletionPolicy(
         new KeepOnlyLastCommitDeletionPolicy(), snapshotDir, OpenMode.CREATE,
         TEST_VERSION_CURRENT);
@@ -73,7 +71,7 @@ public class TestPersistentSnapshotDeletionPolicy extends TestSnapshotDeletionPo
   @Test
   public void testExistingSnapshots() throws Exception {
     int numSnapshots = 3;
-    Directory dir = newDirectory(random);
+    Directory dir = newDirectory();
     PersistentSnapshotDeletionPolicy psdp = (PersistentSnapshotDeletionPolicy) getDeletionPolicy();
     IndexWriter writer = new IndexWriter(dir, getConfig(random, psdp));
     prepareIndexAndSnapshots(psdp, writer, numSnapshots, "snapshot");
@@ -137,7 +135,7 @@ public class TestPersistentSnapshotDeletionPolicy extends TestSnapshotDeletionPo
 
   @Test
   public void testSnapshotRelease() throws Exception {
-    Directory dir = newDirectory(random);
+    Directory dir = newDirectory();
     PersistentSnapshotDeletionPolicy psdp = (PersistentSnapshotDeletionPolicy) getDeletionPolicy();
     IndexWriter writer = new IndexWriter(dir, getConfig(random, psdp));
     prepareIndexAndSnapshots(psdp, writer, 1, "snapshot");
@@ -160,7 +158,7 @@ public class TestPersistentSnapshotDeletionPolicy extends TestSnapshotDeletionPo
     // prevents reading the snapshots information. This test checks that the 
     // static read method works.
     int numSnapshots = 1;
-    Directory dir = newDirectory(random);
+    Directory dir = newDirectory();
     PersistentSnapshotDeletionPolicy psdp = (PersistentSnapshotDeletionPolicy) getDeletionPolicy();
     IndexWriter writer = new IndexWriter(dir, getConfig(random, psdp));
     prepareIndexAndSnapshots(psdp, writer, numSnapshots, "snapshot");

@@ -19,28 +19,36 @@ package org.apache.lucene.collation;
 
 
 import org.apache.lucene.analysis.Analyzer;
+import org.apache.lucene.index.codecs.CodecProvider;
+import org.apache.lucene.util.BytesRef;
 
 import java.text.Collator;
 import java.util.Locale;
 
 
 public class TestCollationKeyAnalyzer extends CollationTestBase {
-
+  // the sort order of Ø versus U depends on the version of the rules being used
+  // for the inherited root locale: Ø's order isnt specified in Locale.US since 
+  // its not used in english.
+  private boolean oStrokeFirst = Collator.getInstance(new Locale("")).compare("Ø", "U") < 0;
+  
   // Neither Java 1.4.2 nor 1.5.0 has Farsi Locale collation available in
   // RuleBasedCollator.  However, the Arabic Locale seems to order the Farsi
   // characters properly.
   private Collator collator = Collator.getInstance(new Locale("ar"));
-  private Analyzer analyzer = new CollationKeyAnalyzer(collator);
+  private Analyzer analyzer = new CollationKeyAnalyzer(TEST_VERSION_CURRENT, collator);
 
-  private String firstRangeBeginning = encodeCollationKey
-    (collator.getCollationKey(firstRangeBeginningOriginal).toByteArray());
-  private String firstRangeEnd = encodeCollationKey
-    (collator.getCollationKey(firstRangeEndOriginal).toByteArray());
-  private String secondRangeBeginning = encodeCollationKey
-    (collator.getCollationKey(secondRangeBeginningOriginal).toByteArray());
-  private String secondRangeEnd = encodeCollationKey
-    (collator.getCollationKey(secondRangeEndOriginal).toByteArray());
+  private BytesRef firstRangeBeginning = new BytesRef(collator.getCollationKey(firstRangeBeginningOriginal).toByteArray());
+  private BytesRef firstRangeEnd = new BytesRef(collator.getCollationKey(firstRangeEndOriginal).toByteArray());
+  private BytesRef secondRangeBeginning = new BytesRef(collator.getCollationKey(secondRangeBeginningOriginal).toByteArray());
+  private BytesRef secondRangeEnd = new BytesRef(collator.getCollationKey(secondRangeEndOriginal).toByteArray());
   
+  @Override
+  public void setUp() throws Exception {
+    super.setUp();
+    assumeFalse("preflex format only supports UTF-8 encoded bytes", "PreFlex".equals(CodecProvider.getDefault().getDefaultFieldCodec()));
+  }
+
   public void testFarsiRangeFilterCollating() throws Exception {
     testFarsiRangeFilterCollating
       (analyzer, firstRangeBeginning, firstRangeEnd, 
@@ -61,17 +69,27 @@ public class TestCollationKeyAnalyzer extends CollationTestBase {
   
   public void testCollationKeySort() throws Exception {
     Analyzer usAnalyzer 
-      = new CollationKeyAnalyzer(Collator.getInstance(Locale.US));
+      = new CollationKeyAnalyzer(TEST_VERSION_CURRENT, Collator.getInstance(Locale.US));
     Analyzer franceAnalyzer 
-      = new CollationKeyAnalyzer(Collator.getInstance(Locale.FRANCE));
+      = new CollationKeyAnalyzer(TEST_VERSION_CURRENT, Collator.getInstance(Locale.FRANCE));
     Analyzer swedenAnalyzer 
-      = new CollationKeyAnalyzer(Collator.getInstance(new Locale("sv", "se")));
+      = new CollationKeyAnalyzer(TEST_VERSION_CURRENT, Collator.getInstance(new Locale("sv", "se")));
     Analyzer denmarkAnalyzer 
-      = new CollationKeyAnalyzer(Collator.getInstance(new Locale("da", "dk")));
+      = new CollationKeyAnalyzer(TEST_VERSION_CURRENT, Collator.getInstance(new Locale("da", "dk")));
     
-    // The ICU Collator and java.text.Collator implementations differ in their
+    // The ICU Collator and Sun java.text.Collator implementations differ in their
     // orderings - "BFJDH" is the ordering for java.text.Collator for Locale.US.
     testCollationKeySort
-      (usAnalyzer, franceAnalyzer, swedenAnalyzer, denmarkAnalyzer, "BFJDH");
+    (usAnalyzer, franceAnalyzer, swedenAnalyzer, denmarkAnalyzer, 
+     oStrokeFirst ? "BFJHD" : "BFJDH", "EACGI", "BJDFH", "BJDHF");
+  }
+  
+  public void testThreadSafe() throws Exception {
+    int iters = 20 * RANDOM_MULTIPLIER;
+    for (int i = 0; i < iters; i++) {
+      Collator collator = Collator.getInstance(Locale.GERMAN);
+      collator.setStrength(Collator.PRIMARY);
+      assertThreadSafe(new CollationKeyAnalyzer(TEST_VERSION_CURRENT, collator));
+    }
   }
 }

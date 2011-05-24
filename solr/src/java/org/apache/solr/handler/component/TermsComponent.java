@@ -18,7 +18,6 @@ package org.apache.solr.handler.component;
 
 import org.apache.lucene.index.*;
 import org.apache.lucene.util.BytesRef;
-import org.apache.lucene.util.StringHelper;
 import org.apache.noggit.CharArr;
 import org.apache.solr.common.SolrException;
 import org.apache.solr.common.params.*;
@@ -28,7 +27,6 @@ import org.apache.solr.common.util.StrUtils;
 import org.apache.solr.schema.FieldType;
 import org.apache.solr.schema.StrField;
 import org.apache.solr.request.SimpleFacets.CountPair;
-import org.apache.solr.search.SolrIndexReader;
 import org.apache.solr.util.BoundedTreeSet;
 
 import org.apache.solr.client.solrj.response.TermsResponse;
@@ -43,9 +41,22 @@ import java.util.regex.Pattern;
 
 /**
  * Return TermEnum information, useful for things like auto suggest.
+ * 
+ * <pre class="prettyprint">
+ * &lt;searchComponent name="termsComponent" class="solr.TermsComponent"/&gt;
+ * 
+ * &lt;requestHandler name="/terms" class="solr.SearchHandler"&gt;
+ *   &lt;lst name="defaults"&gt;
+ *     &lt;bool name="terms"&gt;true&lt;/bool&gt;
+ *   &lt;/lst&gt;
+ *   &lt;arr name="components"&gt;
+ *     &lt;str&gt;termsComponent&lt;/str&gt;
+ *   &lt;/arr&gt;
+ * &lt;/requestHandler&gt;</pre>
  *
  * @see org.apache.solr.common.params.TermsParams
  *      See Lucene's TermEnum class
+ * @version $Id$
  */
 public class TermsComponent extends SearchComponent {
   public static final int UNLIMITED_MAX_COUNT = -1;
@@ -61,6 +72,7 @@ public class TermsComponent extends SearchComponent {
     // TODO: temporary... this should go in a different component.
     String shards = params.get(ShardParams.SHARDS);
     if (shards != null) {
+      rb.isDistrib = true;
       if (params.get(ShardParams.SHARDS_QT) == null) {
         throw new SolrException(SolrException.ErrorCode.BAD_REQUEST, "No shards.qt parameter specified");
       }
@@ -69,13 +81,14 @@ public class TermsComponent extends SearchComponent {
     }
   }
 
+  @Override
   public void process(ResponseBuilder rb) throws IOException {
     SolrParams params = rb.req.getParams();
     if (!params.getBool(TermsParams.TERMS, false)) return;
 
     String[] fields = params.getParams(TermsParams.TERMS_FIELD);
 
-    NamedList termsResult = new SimpleOrderedMap();
+    NamedList<Object> termsResult = new SimpleOrderedMap<Object>();
     rb.rsp.add("terms", termsResult);
 
     if (fields == null || fields.length==0) return;
@@ -103,14 +116,14 @@ public class TermsComponent extends SearchComponent {
     boolean raw = params.getBool(TermsParams.TERMS_RAW, false);
 
 
-    SolrIndexReader sr = rb.req.getSearcher().getReader();
-    Fields lfields = MultiFields.getFields(sr);
+    final IndexReader indexReader = rb.req.getSearcher().getTopReaderContext().reader;
+    Fields lfields = MultiFields.getFields(indexReader);
 
     for (String field : fields) {
-      NamedList fieldTerms = new NamedList();
+      NamedList<Integer> fieldTerms = new NamedList<Integer>();
       termsResult.add(field, fieldTerms);
 
-      Terms terms = lfields.terms(field);
+      Terms terms = lfields == null ? null : lfields.terms(field);
       if (terms == null) {
         // no terms for this field
         continue;
@@ -273,7 +286,9 @@ public class TermsComponent extends SearchComponent {
     TermsHelper th = rb._termsHelper;
     if (th != null) {
       for (ShardResponse srsp : sreq.responses) {
-        th.parse((NamedList) srsp.getSolrResponse().getResponse().get("terms"));
+        @SuppressWarnings("unchecked")
+        NamedList<NamedList<Number>> terms = (NamedList<NamedList<Number>>) srsp.getSolrResponse().getResponse().get("terms");
+        th.parse(terms);
       }
     }
   }
@@ -298,9 +313,6 @@ public class TermsComponent extends SearchComponent {
     // base shard request on original parameters
     sreq.params = new ModifiableSolrParams(params);
 
-    // don't pass through the shards param
-    sreq.params.remove(ShardParams.SHARDS);
-
     // remove any limits for shards, we want them to return all possible
     // responses
     // we want this so we can calculate the correct counts
@@ -310,11 +322,6 @@ public class TermsComponent extends SearchComponent {
     sreq.params.set(TermsParams.TERMS_LIMIT, -1);
     sreq.params.set(TermsParams.TERMS_SORT, TermsParams.TERMS_SORT_INDEX);
 
-    // TODO: is there a better way to handle this?
-    String qt = params.get(CommonParams.QT);
-    if (qt != null) {
-      sreq.params.add(CommonParams.QT, qt);
-    }
     return sreq;
   }
 
@@ -339,7 +346,7 @@ public class TermsComponent extends SearchComponent {
       }
     }
 
-    public void parse(NamedList terms) {
+    public void parse(NamedList<NamedList<Number>> terms) {
       // exit if there is no terms
       if (terms == null) {
         return;
@@ -372,7 +379,7 @@ public class TermsComponent extends SearchComponent {
     }
 
     public NamedList buildResponse() {
-      NamedList response = new SimpleOrderedMap();
+      NamedList<Object> response = new SimpleOrderedMap<Object>();
 
       // determine if we are going index or count sort
       boolean sort = !TermsParams.TERMS_SORT_INDEX.equals(params.get(
@@ -401,7 +408,7 @@ public class TermsComponent extends SearchComponent {
 
       // loop though each field we want terms from
       for (String key : fieldmap.keySet()) {
-        NamedList fieldterms = new SimpleOrderedMap();
+        NamedList<Number> fieldterms = new SimpleOrderedMap<Number>();
         TermsResponse.Term[] data = null;
         if (sort) {
           data = getCountSorted(fieldmap.get(key));
@@ -470,18 +477,22 @@ public class TermsComponent extends SearchComponent {
     }
   }
 
+  @Override
   public String getVersion() {
     return "$Revision$";
   }
 
+  @Override
   public String getSourceId() {
     return "$Id$";
   }
 
+  @Override
   public String getSource() {
     return "$URL$";
   }
 
+  @Override
   public String getDescription() {
     return "A Component for working with Term Enumerators";
   }

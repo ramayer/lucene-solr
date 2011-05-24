@@ -19,8 +19,10 @@ package org.apache.solr.response;
 
 import org.apache.solr.request.SolrQueryRequest;
 import org.apache.solr.response.SolrQueryResponse;
+import org.apache.solr.search.DocList;
 import org.apache.solr.search.DocSlice;
 import org.apache.solr.common.SolrDocumentList;
+import org.apache.solr.common.SolrException;
 
 public class PageTool {
   private long start;
@@ -35,17 +37,23 @@ public class PageTool {
     if (rows != null) {
       results_per_page = new Integer(rows);
     }
-
+    //TODO: Handle group by results
     Object docs = response.getValues().get("response");
     if (docs != null) {
       if (docs instanceof DocSlice) {
         DocSlice doc_slice = (DocSlice) docs;
         results_found = doc_slice.matches();
         start = doc_slice.offset();
-      } else {
+      } else if(docs instanceof ResultContext) {
+        DocList dl = ((ResultContext) docs).docs;
+        results_found = dl.matches();
+        start = dl.offset();
+      } else if(docs instanceof SolrDocumentList) {
         SolrDocumentList doc_list = (SolrDocumentList) docs;
         results_found = doc_list.getNumFound();
         start = doc_list.getStart();
+      } else {
+	  throw new SolrException(SolrException.ErrorCode.UNKNOWN, "Unknown response type "+docs+". Expected one of DocSlice, ResultContext or SolrDocumentList");
       }
     }
 
@@ -73,6 +81,7 @@ public class PageTool {
     return current_page_number;
   }
 
+  @Override
   public String toString() {
     return "Found " + results_found +
            " Page " + current_page_number + " of " + page_count +

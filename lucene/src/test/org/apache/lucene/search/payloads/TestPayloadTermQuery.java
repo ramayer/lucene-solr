@@ -18,34 +18,36 @@ package org.apache.lucene.search.payloads;
 
 import org.apache.lucene.util.LuceneTestCase;
 import org.apache.lucene.util.English;
+import org.apache.lucene.search.DefaultSimilarityProvider;
 import org.apache.lucene.search.IndexSearcher;
 import org.apache.lucene.search.QueryUtils;
+import org.apache.lucene.search.Similarity;
+import org.apache.lucene.search.SimilarityProvider;
 import org.apache.lucene.search.TopDocs;
 import org.apache.lucene.search.ScoreDoc;
 import org.apache.lucene.search.CheckHits;
 import org.apache.lucene.search.BooleanClause;
 import org.apache.lucene.search.BooleanQuery;
 import org.apache.lucene.search.DefaultSimilarity;
+import org.apache.lucene.search.spans.MultiSpansWrapper;
 import org.apache.lucene.search.spans.SpanTermQuery;
 import org.apache.lucene.search.spans.Spans;
-import org.apache.lucene.search.spans.TermSpans;
 import org.apache.lucene.analysis.Analyzer;
 import org.apache.lucene.analysis.MockTokenizer;
 import org.apache.lucene.analysis.TokenStream;
 import org.apache.lucene.analysis.TokenFilter;
 import org.apache.lucene.analysis.tokenattributes.PayloadAttribute;
+import org.apache.lucene.index.FieldInvertState;
 import org.apache.lucene.index.IndexReader;
 import org.apache.lucene.index.Payload;
 import org.apache.lucene.index.RandomIndexWriter;
 import org.apache.lucene.index.Term;
-import org.apache.lucene.index.SlowMultiReaderWrapper;
 import org.apache.lucene.store.Directory;
 import org.apache.lucene.document.Document;
 import org.apache.lucene.document.Field;
 
 import java.io.Reader;
 import java.io.IOException;
-import java.util.Random;
 
 
 /**
@@ -55,15 +57,11 @@ import java.util.Random;
 public class TestPayloadTermQuery extends LuceneTestCase {
   private IndexSearcher searcher;
   private IndexReader reader;
-  private BoostingSimilarity similarity = new BoostingSimilarity();
+  private SimilarityProvider similarityProvider = new BoostingSimilarityProvider();
   private byte[] payloadField = new byte[]{1};
   private byte[] payloadMultiField1 = new byte[]{2};
   private byte[] payloadMultiField2 = new byte[]{4};
   protected Directory directory;
-
-  public TestPayloadTermQuery(String s) {
-    super(s);
-  }
 
   private class PayloadAnalyzer extends Analyzer {
 
@@ -110,32 +108,31 @@ public class TestPayloadTermQuery extends LuceneTestCase {
   }
 
   @Override
-  protected void setUp() throws Exception {
+  public void setUp() throws Exception {
     super.setUp();
-    Random random = newRandom();
-    directory = newDirectory(random);
+    directory = newDirectory();
     RandomIndexWriter writer = new RandomIndexWriter(random, directory, 
-        newIndexWriterConfig(random, TEST_VERSION_CURRENT, new PayloadAnalyzer())
-        .setSimilarity(similarity));
+        newIndexWriterConfig(TEST_VERSION_CURRENT, new PayloadAnalyzer())
+                                                     .setSimilarityProvider(similarityProvider).setMergePolicy(newLogMergePolicy()));
     //writer.infoStream = System.out;
     for (int i = 0; i < 1000; i++) {
       Document doc = new Document();
-      Field noPayloadField = new Field(PayloadHelper.NO_PAYLOAD_FIELD, English.intToEnglish(i), Field.Store.YES, Field.Index.ANALYZED);
+      Field noPayloadField = newField(PayloadHelper.NO_PAYLOAD_FIELD, English.intToEnglish(i), Field.Store.YES, Field.Index.ANALYZED);
       //noPayloadField.setBoost(0);
       doc.add(noPayloadField);
-      doc.add(new Field("field", English.intToEnglish(i), Field.Store.YES, Field.Index.ANALYZED));
-      doc.add(new Field("multiField", English.intToEnglish(i) + "  " + English.intToEnglish(i), Field.Store.YES, Field.Index.ANALYZED));
+      doc.add(newField("field", English.intToEnglish(i), Field.Store.YES, Field.Index.ANALYZED));
+      doc.add(newField("multiField", English.intToEnglish(i) + "  " + English.intToEnglish(i), Field.Store.YES, Field.Index.ANALYZED));
       writer.addDocument(doc);
     }
     reader = writer.getReader();
     writer.close();
 
-    searcher = new IndexSearcher(SlowMultiReaderWrapper.wrap(reader));
-    searcher.setSimilarity(similarity);
+    searcher = newSearcher(reader);
+    searcher.setSimilarityProvider(similarityProvider);
   }
 
   @Override
-  protected void tearDown() throws Exception {
+  public void tearDown() throws Exception {
     searcher.close();
     reader.close();
     directory.close();
@@ -158,9 +155,8 @@ public class TestPayloadTermQuery extends LuceneTestCase {
       assertTrue(doc.score + " does not equal: " + 1, doc.score == 1);
     }
     CheckHits.checkExplanations(query, PayloadHelper.FIELD, searcher, true);
-    Spans spans = query.getSpans(searcher.getIndexReader());
+    Spans spans = MultiSpansWrapper.wrap(searcher.getTopReaderContext(), query);
     assertTrue("spans is null and it shouldn't be", spans != null);
-    assertTrue("spans is not an instanceof " + TermSpans.class, spans instanceof TermSpans);
     /*float score = hits.score(0);
     for (int i =1; i < hits.length(); i++)
     {
@@ -210,9 +206,8 @@ public class TestPayloadTermQuery extends LuceneTestCase {
     }
     assertTrue(numTens + " does not equal: " + 10, numTens == 10);
     CheckHits.checkExplanations(query, "field", searcher, true);
-    Spans spans = query.getSpans(searcher.getIndexReader());
+    Spans spans = MultiSpansWrapper.wrap(searcher.getTopReaderContext(), query);
     assertTrue("spans is null and it shouldn't be", spans != null);
-    assertTrue("spans is not an instanceof " + TermSpans.class, spans instanceof TermSpans);
     //should be two matches per document
     int count = 0;
     //100 hits times 2 matches per hit, we should have 200 in count
@@ -228,7 +223,12 @@ public class TestPayloadTermQuery extends LuceneTestCase {
             new MaxPayloadFunction(), false);
 
     IndexSearcher theSearcher = new IndexSearcher(directory, true);
-    theSearcher.setSimilarity(new FullSimilarity());
+    theSearcher.setSimilarityProvider(new DefaultSimilarityProvider() {
+      @Override
+      public Similarity get(String field) {
+        return new FullSimilarity();
+      }
+    });
     TopDocs hits = searcher.search(query, null, 100);
     assertTrue("hits is null and it shouldn't be", hits != null);
     assertTrue("hits Size: " + hits.totalHits + " is not: " + 100, hits.totalHits == 100);
@@ -252,9 +252,8 @@ public class TestPayloadTermQuery extends LuceneTestCase {
     }
     assertTrue(numTens + " does not equal: " + 10, numTens == 10);
     CheckHits.checkExplanations(query, "field", searcher, true);
-    Spans spans = query.getSpans(searcher.getIndexReader());
+    Spans spans = MultiSpansWrapper.wrap(searcher.getTopReaderContext(), query);
     assertTrue("spans is null and it shouldn't be", spans != null);
-    assertTrue("spans is not an instanceof " + TermSpans.class, spans instanceof TermSpans);
     //should be two matches per document
     int count = 0;
     //100 hits times 2 matches per hit, we should have 200 in count
@@ -288,57 +287,60 @@ public class TestPayloadTermQuery extends LuceneTestCase {
     assertTrue("hits Size: " + hits.totalHits + " is not: " + 1, hits.totalHits == 1);
     int[] results = new int[1];
     results[0] = 0;//hits.scoreDocs[0].doc;
-    CheckHits.checkHitCollector(query, PayloadHelper.NO_PAYLOAD_FIELD, searcher, results);
+    CheckHits.checkHitCollector(random, query, PayloadHelper.NO_PAYLOAD_FIELD, searcher, results);
   }
 
   // must be static for weight serialization tests 
-  static class BoostingSimilarity extends DefaultSimilarity {
+  static class BoostingSimilarityProvider implements SimilarityProvider {
 
-    // TODO: Remove warning after API has been finalized
-    @Override
-    public float scorePayload(int docId, String fieldName, int start, int end, byte[] payload, int offset, int length) {
-      //we know it is size 4 here, so ignore the offset/length
-      return payload[0];
-    }
-
-    //!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-    //Make everything else 1 so we see the effect of the payload
-    //!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-    @Override
-    public float lengthNorm(String fieldName, int numTerms) {
-      return 1;
-    }
-
-    @Override
     public float queryNorm(float sumOfSquaredWeights) {
       return 1;
     }
-
-    @Override
-    public float sloppyFreq(int distance) {
-      return 1;
-    }
-
-    @Override
+    
     public float coord(int overlap, int maxOverlap) {
       return 1;
     }
 
-    @Override
-    public float idf(int docFreq, int numDocs) {
-      return 1;
-    }
+    public Similarity get(String field) {
+      return new DefaultSimilarity() {
+    
+        // TODO: Remove warning after API has been finalized
+        @Override
+        public float scorePayload(int docId, int start, int end, byte[] payload, int offset, int length) {
+          //we know it is size 4 here, so ignore the offset/length
+          return payload[offset];
+        }
 
-    @Override
-    public float tf(float freq) {
-      return freq == 0 ? 0 : 1;
+        //!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+        //Make everything else 1 so we see the effect of the payload
+        //!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+        @Override
+        public float computeNorm(FieldInvertState state) {
+          return state.getBoost();
+        }
+
+        @Override
+        public float sloppyFreq(int distance) {
+          return 1;
+        }
+
+        @Override
+        public float idf(int docFreq, int numDocs) {
+          return 1;
+        }
+
+        @Override
+        public float tf(float freq) {
+          return freq == 0 ? 0 : 1;
+        }
+      };
     }
   }
 
   static class FullSimilarity extends DefaultSimilarity{
     public float scorePayload(int docId, String fieldName, byte[] payload, int offset, int length) {
       //we know it is size 4 here, so ignore the offset/length
-      return payload[0];
+      return payload[offset];
     }
   }
 

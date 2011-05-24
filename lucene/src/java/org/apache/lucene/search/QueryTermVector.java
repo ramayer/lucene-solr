@@ -28,9 +28,9 @@ import java.util.Map;
 
 import org.apache.lucene.analysis.Analyzer;
 import org.apache.lucene.analysis.TokenStream;
-import org.apache.lucene.analysis.tokenattributes.CharTermAttribute;
 import org.apache.lucene.analysis.tokenattributes.TermToBytesRefAttribute;
 import org.apache.lucene.index.TermFreqVector;
+import org.apache.lucene.util.ArrayUtil;
 import org.apache.lucene.util.BytesRef;
 
 /**
@@ -55,7 +55,12 @@ public class QueryTermVector implements TermFreqVector {
   public QueryTermVector(String queryString, Analyzer analyzer) {    
     if (analyzer != null)
     {
-      TokenStream stream = analyzer.tokenStream("", new StringReader(queryString));
+      TokenStream stream;
+      try {
+        stream = analyzer.reusableTokenStream("", new StringReader(queryString));
+      } catch (IOException e1) {
+        stream = null;
+      }
       if (stream != null)
       {
         List<BytesRef> terms = new ArrayList<BytesRef>();
@@ -66,10 +71,10 @@ public class QueryTermVector implements TermFreqVector {
           final TermToBytesRefAttribute termAtt = stream.getAttribute(TermToBytesRefAttribute.class);
 
           hasMoreTokens = stream.incrementToken();
+          BytesRef bytes = termAtt.getBytesRef();
           while (hasMoreTokens) {
-            BytesRef bytes = new BytesRef();
-            termAtt.toBytesRef(bytes);
-            terms.add(bytes);
+            termAtt.fillBytesRef();
+            terms.add(new BytesRef(bytes));
             hasMoreTokens = stream.incrementToken();
           }
           processTerms(terms.toArray(new BytesRef[terms.size()]));
@@ -81,7 +86,7 @@ public class QueryTermVector implements TermFreqVector {
   
   private void processTerms(BytesRef[] queryTerms) {
     if (queryTerms != null) {
-      Arrays.sort(queryTerms);
+      ArrayUtil.quickSort(queryTerms);
       Map<BytesRef,Integer> tmpSet = new HashMap<BytesRef,Integer>(queryTerms.length);
       //filter out duplicates
       List<BytesRef> tmpList = new ArrayList<BytesRef>(queryTerms.length);

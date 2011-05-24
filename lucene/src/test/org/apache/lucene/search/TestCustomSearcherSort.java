@@ -17,7 +17,6 @@ package org.apache.lucene.search;
  */
 
 import java.io.IOException;
-import java.io.Serializable;
 import java.util.Calendar;
 import java.util.GregorianCalendar;
 import java.util.Map;
@@ -34,7 +33,7 @@ import org.apache.lucene.store.Directory;
 import org.apache.lucene.util.LuceneTestCase;
 
 /** Unit test for sorting code. */
-public class TestCustomSearcherSort extends LuceneTestCase implements Serializable {
+public class TestCustomSearcherSort extends LuceneTestCase {
   
   private Directory index = null;
   private IndexReader reader;
@@ -46,26 +45,25 @@ public class TestCustomSearcherSort extends LuceneTestCase implements Serializab
    * Create index and query for test cases.
    */
   @Override
-  protected void setUp() throws Exception {
+  public void setUp() throws Exception {
     super.setUp();
-    Random rand = newRandom();
-    index = newDirectory(rand);
-    RandomIndexWriter writer = new RandomIndexWriter(rand, index);
-    RandomGen random = new RandomGen(rand);
+    index = newDirectory();
+    RandomIndexWriter writer = new RandomIndexWriter(random, index);
+    RandomGen random = new RandomGen(this.random);
     for (int i = 0; i < INDEX_SIZE; ++i) { // don't decrease; if to low the
                                            // problem doesn't show up
       Document doc = new Document();
       if ((i % 5) != 0) { // some documents must not have an entry in the first
                           // sort field
-        doc.add(new Field("publicationDate_", random.getLuceneDate(),
+        doc.add(newField("publicationDate_", random.getLuceneDate(),
             Field.Store.YES, Field.Index.NOT_ANALYZED));
       }
       if ((i % 7) == 0) { // some documents to match the query (see below)
-        doc.add(new Field("content", "test", Field.Store.YES,
+        doc.add(newField("content", "test", Field.Store.YES,
             Field.Index.ANALYZED));
       }
       // every document has a defined 'mandant' field
-      doc.add(new Field("mandant", Integer.toString(i % 3), Field.Store.YES,
+      doc.add(newField("mandant", Integer.toString(i % 3), Field.Store.YES,
           Field.Index.NOT_ANALYZED));
       writer.addDocument(doc);
     }
@@ -75,7 +73,7 @@ public class TestCustomSearcherSort extends LuceneTestCase implements Serializab
   }
   
   @Override
-  protected void tearDown() throws Exception {
+  public void tearDown() throws Exception {
     reader.close();
     index.close();
     super.tearDown();
@@ -90,7 +88,7 @@ public class TestCustomSearcherSort extends LuceneTestCase implements Serializab
     Sort custSort = new Sort(
         new SortField("publicationDate_", SortField.STRING),
         SortField.FIELD_SCORE);
-    Searcher searcher = new CustomSearcher(reader, 2);
+    IndexSearcher searcher = new CustomSearcher(reader, 2);
     // search and check hits
     matchHits(searcher, custSort);
   }
@@ -104,29 +102,13 @@ public class TestCustomSearcherSort extends LuceneTestCase implements Serializab
     Sort custSort = new Sort(
         new SortField("publicationDate_", SortField.STRING),
         SortField.FIELD_SCORE);
-    Searcher searcher = new MultiSearcher(new Searcher[] {new CustomSearcher(
-        reader, 2)});
-    // search and check hits
-    matchHits(searcher, custSort);
-  }
-  
-  /**
-   * Run the test using two CustomSearcher instances.
-   */
-  public void testFieldSortMultiCustomSearcher() throws Exception {
-    // log("Run testFieldSortMultiCustomSearcher");
-    // define the sort criteria
-    Sort custSort = new Sort(
-        new SortField("publicationDate_", SortField.STRING),
-        SortField.FIELD_SCORE);
-    Searcher searcher = new MultiSearcher(new Searchable[] {
-        new CustomSearcher(reader, 0), new CustomSearcher(reader, 2)});
+    IndexSearcher searcher = new CustomSearcher(reader, 2);
     // search and check hits
     matchHits(searcher, custSort);
   }
   
   // make sure the documents returned by the search match the expected list
-  private void matchHits(Searcher searcher, Sort sort) throws IOException {
+  private void matchHits(IndexSearcher searcher, Sort sort) throws IOException {
     // make a query without sorting first
     ScoreDoc[] hitsByRank = searcher.search(query, null, Integer.MAX_VALUE).scoreDocs;
     checkHits(hitsByRank, "Sort by rank: "); // check for duplicates

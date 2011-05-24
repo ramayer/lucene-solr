@@ -27,30 +27,25 @@ import org.apache.lucene.util.BytesRef;
 
 import org.apache.lucene.document.Document;
 import org.apache.lucene.document.Fieldable;
-import org.apache.lucene.search.Similarity;
 import org.apache.lucene.store.Directory;
 
 public class TestSegmentReader extends LuceneTestCase {
   private Directory dir;
   private Document testDoc = new Document();
   private SegmentReader reader = null;
-
-  public TestSegmentReader(String s) {
-    super(s);
-  }
   
   //TODO: Setup the reader w/ multiple documents
   @Override
-  protected void setUp() throws Exception {
+  public void setUp() throws Exception {
     super.setUp();
-    dir = newDirectory(newRandom());
+    dir = newDirectory();
     DocHelper.setupDoc(testDoc);
-    SegmentInfo info = DocHelper.writeDoc(dir, testDoc);
+    SegmentInfo info = DocHelper.writeDoc(random, dir, testDoc);
     reader = SegmentReader.get(true, info, IndexReader.DEFAULT_TERMS_INDEX_DIVISOR);
   }
   
   @Override
-  protected void tearDown() throws Exception {
+  public void tearDown() throws Exception {
     reader.close();
     dir.close();
     super.tearDown();
@@ -81,7 +76,7 @@ public class TestSegmentReader extends LuceneTestCase {
   public void testDelete() throws IOException {
     Document docToDelete = new Document();
     DocHelper.setupDoc(docToDelete);
-    SegmentInfo info = DocHelper.writeDoc(dir, docToDelete);
+    SegmentInfo info = DocHelper.writeDoc(random, dir, docToDelete);
     SegmentReader deleteReader = SegmentReader.get(false, info, IndexReader.DEFAULT_TERMS_INDEX_DIVISOR);
     assertTrue(deleteReader != null);
     assertTrue(deleteReader.numDocs() == 1);
@@ -184,15 +179,9 @@ public class TestSegmentReader extends LuceneTestCase {
         assertEquals(reader.hasNorms(f.name()), !f.getOmitNorms());
         assertEquals(reader.hasNorms(f.name()), !DocHelper.noNorms.containsKey(f.name()));
         if (!reader.hasNorms(f.name())) {
-          // test for fake norms of 1.0 or null depending on the flag
-          byte [] norms = reader.norms(f.name());
-          byte norm1 = Similarity.getDefault().encodeNormValue(1.0f);
+          // test for norms of null
+          byte [] norms = MultiNorms.norms(reader, f.name());
           assertNull(norms);
-          norms = new byte[reader.maxDoc()];
-          reader.norms(f.name(),norms, 0);
-          for (int j=0; j<reader.maxDoc(); j++) {
-            assertEquals(norms[j], norm1);
-          }
         }
       }
     }

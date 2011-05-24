@@ -21,8 +21,8 @@ import java.text.DecimalFormat;
 import java.text.DecimalFormatSymbols;
 import java.text.NumberFormat;
 import java.util.Locale;
-import java.util.Random;
 
+import org.apache.lucene.analysis.MockAnalyzer;
 import org.apache.lucene.document.Document;
 import org.apache.lucene.document.Field;
 import org.apache.lucene.index.IndexReader;
@@ -30,6 +30,7 @@ import org.apache.lucene.index.RandomIndexWriter;
 import org.apache.lucene.index.Term;
 import org.apache.lucene.store.Directory;
 import org.apache.lucene.util.LuceneTestCase;
+import org.apache.lucene.util._TestUtil;
 
 /**
  * Create an index with terms from 0000-9999.
@@ -37,20 +38,20 @@ import org.apache.lucene.util.LuceneTestCase;
  * and validates the correct number of hits are returned.
  */
 public class TestWildcardRandom extends LuceneTestCase {
-  private Searcher searcher;
+  private IndexSearcher searcher;
   private IndexReader reader;
-  private Random random;
   private Directory dir;
   
   @Override
-  protected void setUp() throws Exception {
+  public void setUp() throws Exception {
     super.setUp();
-    random = newRandom();
-    dir = newDirectory(random);
-    RandomIndexWriter writer = new RandomIndexWriter(random, dir);
+    dir = newDirectory();
+    RandomIndexWriter writer = new RandomIndexWriter(random, dir,
+        newIndexWriterConfig(TEST_VERSION_CURRENT, new MockAnalyzer(random))
+        .setMaxBufferedDocs(_TestUtil.nextInt(random, 50, 1000)));
     
     Document doc = new Document();
-    Field field = new Field("field", "", Field.Store.NO, Field.Index.ANALYZED);
+    Field field = newField("field", "", Field.Store.NO, Field.Index.ANALYZED);
     doc.add(field);
     
     NumberFormat df = new DecimalFormat("0000", new DecimalFormatSymbols(Locale.ENGLISH));
@@ -60,7 +61,7 @@ public class TestWildcardRandom extends LuceneTestCase {
     }
     
     reader = writer.getReader();
-    searcher = new IndexSearcher(reader);
+    searcher = newSearcher(reader);
     writer.close();
   }
   
@@ -90,7 +91,7 @@ public class TestWildcardRandom extends LuceneTestCase {
   }
 
   @Override
-  protected void tearDown() throws Exception {
+  public void tearDown() throws Exception {
     searcher.close();
     reader.close();
     dir.close();

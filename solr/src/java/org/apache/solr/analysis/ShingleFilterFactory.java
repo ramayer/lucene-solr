@@ -26,13 +26,26 @@ import org.apache.solr.common.SolrException.ErrorCode;
 
 import java.util.Map;
 
-/** Factory for {@link ShingleFilter} */
+/** 
+ * Factory for {@link ShingleFilter}.
+ * <pre class="prettyprint" >
+ * &lt;fieldType name="text_shingle" class="solr.TextField" positionIncrementGap="100"&gt;
+ *   &lt;analyzer&gt;
+ *     &lt;tokenizer class="solr.WhitespaceTokenizerFactory"/&gt;
+ *     &lt;filter class="solr.ShingleFilterFactory" minShingleSize="2" maxShingleSize="2"
+ *             outputUnigrams="true" outputUnigramsIfNoShingles="false" tokenSeparator=" "/&gt;
+ *   &lt;/analyzer&gt;
+ * &lt;/fieldType&gt;</pre>
+ * @version $Id$
+ */
 public class ShingleFilterFactory extends BaseTokenFilterFactory {
   private int minShingleSize;
   private int maxShingleSize;
   private boolean outputUnigrams;
+  private boolean outputUnigramsIfNoShingles;
   private String tokenSeparator;
 
+  @Override
   public void init(Map<String, String> args) {
     super.init(args);
     maxShingleSize = getInt("maxShingleSize", 
@@ -56,6 +69,7 @@ public class ShingleFilterFactory extends BaseTokenFilterFactory {
                               + maxShingleSize + ")");
     }
     outputUnigrams = getBoolean("outputUnigrams", true);
+    outputUnigramsIfNoShingles = getBoolean("outputUnigramsIfNoShingles", false);
     tokenSeparator = args.containsKey("tokenSeparator")
                      ? args.get("tokenSeparator")
                      : ShingleFilter.TOKEN_SEPARATOR;
@@ -63,6 +77,7 @@ public class ShingleFilterFactory extends BaseTokenFilterFactory {
   public ShingleFilter create(TokenStream input) {
     ShingleFilter r = new ShingleFilter(input, minShingleSize, maxShingleSize);
     r.setOutputUnigrams(outputUnigrams);
+    r.setOutputUnigramsIfNoShingles(outputUnigramsIfNoShingles);
     r.setTokenSeparator(tokenSeparator);
     return r;
   }

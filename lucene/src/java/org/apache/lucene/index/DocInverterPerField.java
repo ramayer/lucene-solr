@@ -35,20 +35,20 @@ import org.apache.lucene.analysis.tokenattributes.PositionIncrementAttribute;
 
 final class DocInverterPerField extends DocFieldConsumerPerField {
 
-  final private DocInverterPerThread perThread;
-  final private FieldInfo fieldInfo;
+  final private DocInverter parent;
+  final FieldInfo fieldInfo;
   final InvertedDocConsumerPerField consumer;
   final InvertedDocEndConsumerPerField endConsumer;
-  final DocumentsWriter.DocState docState;
+  final DocumentsWriterPerThread.DocState docState;
   final FieldInvertState fieldState;
 
-  public DocInverterPerField(DocInverterPerThread perThread, FieldInfo fieldInfo) {
-    this.perThread = perThread;
+  public DocInverterPerField(DocInverter parent, FieldInfo fieldInfo) {
+    this.parent = parent;
     this.fieldInfo = fieldInfo;
-    docState = perThread.docState;
-    fieldState = perThread.fieldState;
-    this.consumer = perThread.consumer.addField(this, fieldInfo);
-    this.endConsumer = perThread.endConsumer.addField(this, fieldInfo);
+    docState = parent.docState;
+    fieldState = parent.fieldState;
+    this.consumer = parent.consumer.addField(this, fieldInfo);
+    this.endConsumer = parent.endConsumer.addField(this, fieldInfo);
   }
 
   @Override
@@ -63,8 +63,6 @@ final class DocInverterPerField extends DocFieldConsumerPerField {
 
     fieldState.reset(docState.doc.getBoost());
 
-    final int maxFieldLength = docState.maxFieldLength;
-
     final boolean doInvert = consumer.start(fields, count);
 
     for(int i=0;i<count;i++) {
@@ -75,17 +73,15 @@ final class DocInverterPerField extends DocFieldConsumerPerField {
       // consumer if it wants to see this particular field
       // tokenized.
       if (field.isIndexed() && doInvert) {
-
-        final boolean anyToken;
         
-        if (fieldState.length > 0)
+        if (i > 0)
           fieldState.position += docState.analyzer.getPositionIncrementGap(fieldInfo.name);
 
         if (!field.isTokenized()) {		  // un-tokenized field
           String stringValue = field.stringValue();
           final int valueLength = stringValue.length();
-          perThread.singleToken.reinit(stringValue, 0, valueLength);
-          fieldState.attributeSource = perThread.singleToken;
+          parent.singleToken.reinit(stringValue, 0, valueLength);
+          fieldState.attributeSource = parent.singleToken;
           consumer.start(field);
 
           boolean success = false;
@@ -93,13 +89,13 @@ final class DocInverterPerField extends DocFieldConsumerPerField {
             consumer.add();
             success = true;
           } finally {
-            if (!success)
+            if (!success) {
               docState.docWriter.setAborting();
+            }
           }
           fieldState.offset += valueLength;
           fieldState.length++;
           fieldState.position++;
-          anyToken = valueLength > 0;
         } else {                                  // tokenized field
           final TokenStream stream;
           final TokenStream streamValue = field.tokenStreamValue();
@@ -119,8 +115,8 @@ final class DocInverterPerField extends DocFieldConsumerPerField {
               if (stringValue == null) {
                 throw new IllegalArgumentException("field must have either TokenStream, String or Reader value");
               }
-              perThread.stringReader.init(stringValue);
-              reader = perThread.stringReader;
+              parent.stringReader.init(stringValue);
+              reader = parent.stringReader;
             }
           
             // Tokenize field and add to postingTable
@@ -129,8 +125,6 @@ final class DocInverterPerField extends DocFieldConsumerPerField {
 
           // reset the TokenStream to the first token
           stream.reset();
-
-          final int startLength = fieldState.length;
           
           try {
             boolean hasMoreTokens = stream.incrementToken();
@@ -173,15 +167,12 @@ final class DocInverterPerField extends DocFieldConsumerPerField {
                 consumer.add();
                 success = true;
               } finally {
-                if (!success)
+                if (!success) {
                   docState.docWriter.setAborting();
+                }
               }
+              fieldState.length++;
               fieldState.position++;
-              if (++fieldState.length >= maxFieldLength) {
-                if (docState.infoStream != null)
-                  docState.infoStream.println("maxFieldLength " +maxFieldLength+ " reached for field " + fieldInfo.name + ", ignoring following tokens");
-                break;
-              }
 
               hasMoreTokens = stream.incrementToken();
             }
@@ -189,14 +180,12 @@ final class DocInverterPerField extends DocFieldConsumerPerField {
             stream.end();
             
             fieldState.offset += offsetAttribute.endOffset();
-            anyToken = fieldState.length > startLength;
           } finally {
             stream.close();
           }
         }
 
-        if (anyToken)
-          fieldState.offset += docState.analyzer.getOffsetGap(field);
+        fieldState.offset += docState.analyzer.getOffsetGap(field);
         fieldState.boost *= field.getBoost();
       }
 
@@ -207,5 +196,10 @@ final class DocInverterPerField extends DocFieldConsumerPerField {
 
     consumer.finish();
     endConsumer.finish();
+  }
+
+  @Override
+  FieldInfo getFieldInfo() {
+    return fieldInfo;
   }
 }

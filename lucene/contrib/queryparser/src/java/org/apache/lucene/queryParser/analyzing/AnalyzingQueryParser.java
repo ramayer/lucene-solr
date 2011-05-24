@@ -106,10 +106,16 @@ public class AnalyzingQueryParser extends org.apache.lucene.queryParser.QueryPar
     }
 
     // get Analyzer from superclass and tokenize the term
-    TokenStream source = getAnalyzer().tokenStream(field, new StringReader(termStr));
-    CharTermAttribute termAtt = source.addAttribute(CharTermAttribute.class);
+    TokenStream source;
     
     int countTokens = 0;
+    try {
+      source = getAnalyzer().reusableTokenStream(field, new StringReader(termStr));
+      source.reset();
+    } catch (IOException e1) {
+      throw new RuntimeException(e1);
+    }
+    CharTermAttribute termAtt = source.addAttribute(CharTermAttribute.class);
     while (true) {
       try {
         if (!source.incrementToken()) break;
@@ -126,6 +132,7 @@ public class AnalyzingQueryParser extends org.apache.lucene.queryParser.QueryPar
       }
     }
     try {
+      source.end();
       source.close();
     } catch (IOException e) {
       // ignore
@@ -188,10 +195,15 @@ public class AnalyzingQueryParser extends org.apache.lucene.queryParser.QueryPar
   @Override
   protected Query getPrefixQuery(String field, String termStr) throws ParseException {
     // get Analyzer from superclass and tokenize the term
-    TokenStream source = getAnalyzer().tokenStream(field, new StringReader(termStr));
+    TokenStream source;
     List<String> tlist = new ArrayList<String>();
+    try {
+      source = getAnalyzer().reusableTokenStream(field, new StringReader(termStr));
+      source.reset();
+    } catch (IOException e1) {
+      throw new RuntimeException(e1);
+    }
     CharTermAttribute termAtt = source.addAttribute(CharTermAttribute.class);
-    
     while (true) {
       try {
         if (!source.incrementToken()) break;
@@ -202,6 +214,7 @@ public class AnalyzingQueryParser extends org.apache.lucene.queryParser.QueryPar
     }
 
     try {
+      source.end();
       source.close();
     } catch (IOException e) {
       // ignore
@@ -236,12 +249,14 @@ public class AnalyzingQueryParser extends org.apache.lucene.queryParser.QueryPar
   protected Query getFuzzyQuery(String field, String termStr, float minSimilarity)
       throws ParseException {
     // get Analyzer from superclass and tokenize the term
-    TokenStream source = getAnalyzer().tokenStream(field, new StringReader(termStr));
-    CharTermAttribute termAtt = source.addAttribute(CharTermAttribute.class);
+    TokenStream source = null;
     String nextToken = null;
     boolean multipleTokens = false;
     
     try {
+      source = getAnalyzer().reusableTokenStream(field, new StringReader(termStr));
+      CharTermAttribute termAtt = source.addAttribute(CharTermAttribute.class);
+      source.reset();
       if (source.incrementToken()) {
         nextToken = termAtt.toString();
       }
@@ -251,6 +266,7 @@ public class AnalyzingQueryParser extends org.apache.lucene.queryParser.QueryPar
     }
 
     try {
+      source.end();
       source.close();
     } catch (IOException e) {
       // ignore
@@ -269,54 +285,66 @@ public class AnalyzingQueryParser extends org.apache.lucene.queryParser.QueryPar
    * @exception ParseException
    */
   @Override
-  protected Query getRangeQuery(String field, String part1, String part2, boolean inclusive)
+  protected Query getRangeQuery(String field, String part1, String part2, boolean startInclusive, boolean endInclusive)
       throws ParseException {
     // get Analyzer from superclass and tokenize the terms
-    TokenStream source = getAnalyzer().tokenStream(field, new StringReader(part1));
-    CharTermAttribute termAtt = source.addAttribute(CharTermAttribute.class);
+    TokenStream source = null;
+    CharTermAttribute termAtt = null;
     boolean multipleTokens = false;
 
-    // part1
-    try {
-      if (source.incrementToken()) {
-        part1 = termAtt.toString();
+    if (part1 != null) {
+      // part1
+      try {
+        source = getAnalyzer().reusableTokenStream(field, new StringReader(part1));
+        termAtt = source.addAttribute(CharTermAttribute.class);
+        source.reset();
+        multipleTokens = false;
+
+
+        if (source.incrementToken()) {
+          part1 = termAtt.toString();
+        }
+        multipleTokens = source.incrementToken();
+      } catch (IOException e) {
+        // ignore
       }
-      multipleTokens = source.incrementToken();
-    } catch (IOException e) {
-      // ignore
-    }
-    try {
-      source.close();
-    } catch (IOException e) {
-      // ignore
-    }
-    if (multipleTokens) {
-      throw new ParseException("Cannot build RangeQuery with analyzer " + getAnalyzer().getClass()
-          + " - tokens were added to part1");
+      try {
+        source.end();
+        source.close();
+      } catch (IOException e) {
+        // ignore
+      }
+      if (multipleTokens) {
+        throw new ParseException("Cannot build RangeQuery with analyzer " + getAnalyzer().getClass()
+            + " - tokens were added to part1");
+      }
     }
 
-    // part2
-    source = getAnalyzer().tokenStream(field, new StringReader(part2));
-    termAtt = source.addAttribute(CharTermAttribute.class);
-    
-    try {
-      if (source.incrementToken()) {
-        part2 = termAtt.toString();
+    if (part2 != null) {
+      try {
+        // part2
+        source = getAnalyzer().reusableTokenStream(field, new StringReader(part2));
+        termAtt = source.addAttribute(CharTermAttribute.class);
+        source.reset();
+        if (source.incrementToken()) {
+          part2 = termAtt.toString();
+        }
+        multipleTokens = source.incrementToken();
+      } catch (IOException e) {
+        // ignore
       }
-      multipleTokens = source.incrementToken();
-    } catch (IOException e) {
-      // ignore
+      try {
+        source.end();
+        source.close();
+      } catch (IOException e) {
+        // ignore
+      }
+      if (multipleTokens) {
+        throw new ParseException("Cannot build RangeQuery with analyzer " + getAnalyzer().getClass()
+            + " - tokens were added to part2");
+      }
     }
-    try {
-      source.close();
-    } catch (IOException e) {
-      // ignore
-    }
-    if (multipleTokens) {
-      throw new ParseException("Cannot build RangeQuery with analyzer " + getAnalyzer().getClass()
-          + " - tokens were added to part2");
-    }
-    return super.getRangeQuery(field, part1, part2, inclusive);
+    return super.getRangeQuery(field, part1, part2, startInclusive, endInclusive);
   }
 
 }

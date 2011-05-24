@@ -36,15 +36,13 @@ import org.apache.lucene.index.IndexWriterConfig.OpenMode;
 import org.apache.lucene.search.TermQuery;
 import org.apache.lucene.store.Directory;
 
-public class TestStressIndexing2 extends MultiCodecTestCase {
+public class TestStressIndexing2 extends LuceneTestCase {
   static int maxFields=4;
   static int bigFieldSize=10;
   static boolean sameFieldOrder=false;
   static int mergeFactor=3;
   static int maxBufferedDocs=3;
   static int seed=0;
-
-  Random r;
 
   public class MockIndexWriter extends IndexWriter {
 
@@ -55,36 +53,33 @@ public class TestStressIndexing2 extends MultiCodecTestCase {
     @Override
     boolean testPoint(String name) {
       //      if (name.equals("startCommit")) {
-      if (r.nextInt(4) == 2)
+      if (random.nextInt(4) == 2)
         Thread.yield();
       return true;
     }
   }
   
   public void testRandomIWReader() throws Throwable {
-    r = newRandom();
-    Directory dir = newDirectory(r);
+    Directory dir = newDirectory();
     
     // TODO: verify equals using IW.getReader
     DocsAndWriter dw = indexRandomIWReader(5, 3, 100, dir);
     IndexReader reader = dw.writer.getReader();
     dw.writer.commit();
-    verifyEquals(r, reader, dir, "id");
+    verifyEquals(random, reader, dir, "id");
     reader.close();
     dw.writer.close();
     dir.close();
   }
   
   public void testRandom() throws Throwable {
-    r = newRandom();
-    Directory dir1 = newDirectory(r);
-    // dir1 = FSDirectory.open("foofoofoo");
-    Directory dir2 = newDirectory(r);
+    Directory dir1 = newDirectory();
+    Directory dir2 = newDirectory();
     // mergeFactor=2; maxBufferedDocs=2; Map docs = indexRandom(1, 3, 2, dir1);
-    int maxThreadStates = 1+r.nextInt(10);
-    boolean doReaderPooling = r.nextBoolean();
+    int maxThreadStates = 1+random.nextInt(10);
+    boolean doReaderPooling = random.nextBoolean();
     Map<String,Document> docs = indexRandom(5, 3, 100, dir1, maxThreadStates, doReaderPooling);
-    indexSerial(r, docs, dir2);
+    indexSerial(random, docs, dir2);
 
     // verifying verify
     // verifyEquals(dir1, dir1, "id");
@@ -98,26 +93,34 @@ public class TestStressIndexing2 extends MultiCodecTestCase {
   public void testMultiConfig() throws Throwable {
     // test lots of smaller different params together
 
-    r = newRandom();
-
     int num = 3 * RANDOM_MULTIPLIER;
     for (int i = 0; i < num; i++) { // increase iterations for better testing
-      sameFieldOrder=r.nextBoolean();
-      mergeFactor=r.nextInt(3)+2;
-      maxBufferedDocs=r.nextInt(3)+2;
-      int maxThreadStates = 1+r.nextInt(10);
-      boolean doReaderPooling = r.nextBoolean();
+      if (VERBOSE) {
+        System.out.println("\n\nTEST: top iter=" + i);
+      }
+      sameFieldOrder=random.nextBoolean();
+      mergeFactor=random.nextInt(3)+2;
+      maxBufferedDocs=random.nextInt(3)+2;
+      int maxThreadStates = 1+random.nextInt(10);
+      boolean doReaderPooling = random.nextBoolean();
       seed++;
 
-      int nThreads=r.nextInt(5)+1;
-      int iter=r.nextInt(5)+1;
-      int range=r.nextInt(20)+1;
-      Directory dir1 = newDirectory(r);
-      Directory dir2 = newDirectory(r);
+      int nThreads=random.nextInt(5)+1;
+      int iter=random.nextInt(5)+1;
+      int range=random.nextInt(20)+1;
+      Directory dir1 = newDirectory();
+      Directory dir2 = newDirectory();
+      if (VERBOSE) {
+        System.out.println("  nThreads=" + nThreads + " iter=" + iter + " range=" + range + " doPooling=" + doReaderPooling + " maxThreadStates=" + maxThreadStates + " sameFieldOrder=" + sameFieldOrder + " mergeFactor=" + mergeFactor);
+      }
       Map<String,Document> docs = indexRandom(nThreads, iter, range, dir1, maxThreadStates, doReaderPooling);
-      //System.out.println("TEST: index serial");
-      indexSerial(r, docs, dir2);
-      //System.out.println("TEST: verify");
+      if (VERBOSE) {
+        System.out.println("TEST: index serial");
+      }
+      indexSerial(random, docs, dir2);
+      if (VERBOSE) {
+        System.out.println("TEST: verify");
+      }
       verifyEquals(dir1, dir2, "id");
       dir1.close();
       dir2.close();
@@ -144,13 +147,13 @@ public class TestStressIndexing2 extends MultiCodecTestCase {
   
   public DocsAndWriter indexRandomIWReader(int nThreads, int iterations, int range, Directory dir) throws IOException, InterruptedException {
     Map<String,Document> docs = new HashMap<String,Document>();
-    IndexWriter w = new MockIndexWriter(dir, newIndexWriterConfig(r,
-        TEST_VERSION_CURRENT, new MockAnalyzer()).setOpenMode(OpenMode.CREATE).setRAMBufferSizeMB(
-        0.1).setMaxBufferedDocs(maxBufferedDocs));
+    IndexWriter w = new MockIndexWriter(dir, newIndexWriterConfig(
+        TEST_VERSION_CURRENT, new MockAnalyzer(random)).setOpenMode(OpenMode.CREATE).setRAMBufferSizeMB(
+                                                                                                  0.1).setMaxBufferedDocs(maxBufferedDocs).setMergePolicy(newLogMergePolicy()));
+    w.setInfoStream(VERBOSE ? System.out : null);
     w.commit();
     LogMergePolicy lmp = (LogMergePolicy) w.getConfig().getMergePolicy();
     lmp.setUseCompoundFile(false);
-    lmp.setUseCompoundDocStore(false);
     lmp.setMergeFactor(mergeFactor);
     /***
         w.setMaxMergeDocs(Integer.MAX_VALUE);
@@ -196,41 +199,39 @@ public class TestStressIndexing2 extends MultiCodecTestCase {
   public Map<String,Document> indexRandom(int nThreads, int iterations, int range, Directory dir, int maxThreadStates,
                                           boolean doReaderPooling) throws IOException, InterruptedException {
     Map<String,Document> docs = new HashMap<String,Document>();
-    for(int iter=0;iter<3;iter++) {
-      IndexWriter w = new MockIndexWriter(dir, newIndexWriterConfig(r,
-          TEST_VERSION_CURRENT, new MockAnalyzer()).setOpenMode(OpenMode.CREATE)
-               .setRAMBufferSizeMB(0.1).setMaxBufferedDocs(maxBufferedDocs).setMaxThreadStates(maxThreadStates)
-               .setReaderPooling(doReaderPooling));
-      LogMergePolicy lmp = (LogMergePolicy) w.getConfig().getMergePolicy();
-      lmp.setUseCompoundFile(false);
-      lmp.setUseCompoundDocStore(false);
-      lmp.setMergeFactor(mergeFactor);
+    IndexWriter w = new MockIndexWriter(dir, newIndexWriterConfig(
+        TEST_VERSION_CURRENT, new MockAnalyzer(random)).setOpenMode(OpenMode.CREATE)
+             .setRAMBufferSizeMB(0.1).setMaxBufferedDocs(maxBufferedDocs).setIndexerThreadPool(new ThreadAffinityDocumentsWriterThreadPool(maxThreadStates))
+             .setReaderPooling(doReaderPooling).setMergePolicy(newLogMergePolicy()));
+    w.setInfoStream(VERBOSE ? System.out : null);
+    LogMergePolicy lmp = (LogMergePolicy) w.getConfig().getMergePolicy();
+    lmp.setUseCompoundFile(false);
+    lmp.setMergeFactor(mergeFactor);
 
-      threads = new IndexingThread[nThreads];
-      for (int i=0; i<threads.length; i++) {
-        IndexingThread th = new IndexingThread();
-        th.w = w;
-        th.base = 1000000*i;
-        th.range = range;
-        th.iterations = iterations;
-        threads[i] = th;
-      }
+    threads = new IndexingThread[nThreads];
+    for (int i=0; i<threads.length; i++) {
+      IndexingThread th = new IndexingThread();
+      th.w = w;
+      th.base = 1000000*i;
+      th.range = range;
+      th.iterations = iterations;
+      threads[i] = th;
+    }
 
-      for (int i=0; i<threads.length; i++) {
-        threads[i].start();
-      }
-      for (int i=0; i<threads.length; i++) {
-        threads[i].join();
-      }
+    for (int i=0; i<threads.length; i++) {
+      threads[i].start();
+    }
+    for (int i=0; i<threads.length; i++) {
+      threads[i].join();
+    }
 
-      //w.optimize();
-      w.close();    
+    //w.optimize();
+    w.close();    
 
-      for (int i=0; i<threads.length; i++) {
-        IndexingThread th = threads[i];
-        synchronized(th) {
-          docs.putAll(th.docs);
-        }
+    for (int i=0; i<threads.length; i++) {
+      IndexingThread th = threads[i];
+      synchronized(th) {
+        docs.putAll(th.docs);
       }
     }
 
@@ -242,7 +243,7 @@ public class TestStressIndexing2 extends MultiCodecTestCase {
 
   
   public static void indexSerial(Random random, Map<String,Document> docs, Directory dir) throws IOException {
-    IndexWriter w = new IndexWriter(dir, newIndexWriterConfig(random, TEST_VERSION_CURRENT, new MockAnalyzer()));
+    IndexWriter w = new IndexWriter(dir, LuceneTestCase.newIndexWriterConfig(random, TEST_VERSION_CURRENT, new MockAnalyzer(random)).setMergePolicy(newLogMergePolicy()));
 
     // index all docs in a single thread
     Iterator<Document> iter = docs.values().iterator();
@@ -279,9 +280,33 @@ public class TestStressIndexing2 extends MultiCodecTestCase {
     r2.close();
   }
 
+  private static void printDocs(IndexReader r) throws Throwable {
+    IndexReader[] subs = r.getSequentialSubReaders();
+    for(IndexReader sub : subs) {
+      Bits delDocs = sub.getDeletedDocs();
+      System.out.println("  " + ((SegmentReader) sub).getSegmentInfo());
+      for(int docID=0;docID<sub.maxDoc();docID++) {
+        Document doc = sub.document(docID);
+        if (delDocs == null || !delDocs.get(docID)) {
+          System.out.println("    docID=" + docID + " id:" + doc.get("id"));
+        } else {
+          System.out.println("    DEL docID=" + docID + " id:" + doc.get("id"));
+        }
+      }
+    }
+  }
+
 
   public static void verifyEquals(IndexReader r1, IndexReader r2, String idField) throws Throwable {
-    assertEquals(r1.numDocs(), r2.numDocs());
+    if (VERBOSE) {
+      System.out.println("\nr1 docs:");
+      printDocs(r1);
+      System.out.println("\nr2 docs:");
+      printDocs(r2);
+    }
+    if (r1.numDocs() != r2.numDocs()) {
+      assert false: "r1.numDocs()=" + r1.numDocs() + " vs r2.numDocs()=" + r2.numDocs();
+    }
     boolean hasDeletes = !(r1.maxDoc()==r2.maxDoc() && r1.numDocs()==r1.maxDoc());
 
     int[] r2r1 = new int[r2.maxDoc()];   // r2 id to r1 id mapping
@@ -536,20 +561,26 @@ public class TestStressIndexing2 extends MultiCodecTestCase {
         for(int j=0;j<numTerms;j++) {
           int[] pos1 = tpv1.getTermPositions(j);
           int[] pos2 = tpv2.getTermPositions(j);
-          assertEquals(pos1.length, pos2.length);
-          TermVectorOffsetInfo[] offsets1 = tpv1.getOffsets(j);
-          TermVectorOffsetInfo[] offsets2 = tpv2.getOffsets(j);
-          if (offsets1 == null)
-            assertTrue(offsets2 == null);
-          else
-            assertTrue(offsets2 != null);
-          for(int k=0;k<pos1.length;k++) {
-            assertEquals(pos1[k], pos2[k]);
-            if (offsets1 != null) {
-              assertEquals(offsets1[k].getStartOffset(),
-                           offsets2[k].getStartOffset());
-              assertEquals(offsets1[k].getEndOffset(),
-                           offsets2[k].getEndOffset());
+          if (pos1 == null) {
+            assertNull(pos2);
+          } else {
+            assertNotNull(pos1);
+            assertNotNull(pos2);
+            assertEquals(pos1.length, pos2.length);
+            TermVectorOffsetInfo[] offsets1 = tpv1.getOffsets(j);
+            TermVectorOffsetInfo[] offsets2 = tpv2.getOffsets(j);
+            if (offsets1 == null)
+              assertTrue(offsets2 == null);
+            else
+              assertTrue(offsets2 != null);
+            for(int k=0;k<pos1.length;k++) {
+              assertEquals(pos1[k], pos2[k]);
+              if (offsets1 != null) {
+                assertEquals(offsets1[k].getStartOffset(),
+                             offsets2[k].getStartOffset());
+                assertEquals(offsets1[k].getEndOffset(),
+                             offsets2[k].getEndOffset());
+              }
             }
           }
         }
@@ -557,7 +588,7 @@ public class TestStressIndexing2 extends MultiCodecTestCase {
     }
   }
 
-  private static class IndexingThread extends Thread {
+  private class IndexingThread extends Thread {
     IndexWriter w;
     int base;
     int range;
@@ -585,7 +616,7 @@ public class TestStressIndexing2 extends MultiCodecTestCase {
       }
 
       for(int i=start;i<end;i++) {
-        int t = nextInt(6);
+        int t = nextInt(5);
         if (0 == t && i < end-1) {
           // Make a surrogate pair
           // High surrogate
@@ -600,13 +631,6 @@ public class TestStressIndexing2 extends MultiCodecTestCase {
           buffer[i] = (char) nextInt(0x800, 0xd800);
         else if (4 == t)
           buffer[i] = (char) nextInt(0xe000, 0xffff);
-        else if (5 == t) {
-          // Illegal unpaired surrogate
-          if (r.nextBoolean())
-            buffer[i] = (char) nextInt(0xd800, 0xdc00);
-          else
-            buffer[i] = (char) nextInt(0xdc00, 0xe000);
-        }
       }
       buffer[end] = ' ';
       return 1+end;
@@ -645,7 +669,7 @@ public class TestStressIndexing2 extends MultiCodecTestCase {
 
       ArrayList<Field> fields = new ArrayList<Field>();      
       String idString = getIdString();
-      Field idField =  new Field(idTerm.field(), idString, Field.Store.YES, Field.Index.NOT_ANALYZED_NO_NORMS);
+      Field idField =  newField(idTerm.field(), idString, Field.Store.YES, Field.Index.NOT_ANALYZED_NO_NORMS);
       fields.add(idField);
 
       int nFields = nextInt(maxFields);
@@ -669,16 +693,16 @@ public class TestStressIndexing2 extends MultiCodecTestCase {
         
         switch (nextInt(4)) {
           case 0:
-            fields.add(new Field("f" + nextInt(100), getString(1), Field.Store.YES, Field.Index.NOT_ANALYZED_NO_NORMS, tvVal));
+            fields.add(newField("f" + nextInt(100), getString(1), Field.Store.YES, Field.Index.NOT_ANALYZED_NO_NORMS, tvVal));
             break;
           case 1:
-            fields.add(new Field("f" + nextInt(100), getString(0), Field.Store.NO, Field.Index.ANALYZED, tvVal));
+            fields.add(newField("f" + nextInt(100), getString(0), Field.Store.NO, Field.Index.ANALYZED, tvVal));
             break;
           case 2:
-            fields.add(new Field("f" + nextInt(100), getString(0), Field.Store.YES, Field.Index.NO, Field.TermVector.NO));
+            fields.add(newField("f" + nextInt(100), getString(0), Field.Store.YES, Field.Index.NO, Field.TermVector.NO));
             break;
           case 3:
-            fields.add(new Field("f" + nextInt(100), getString(bigFieldSize), Field.Store.YES, Field.Index.ANALYZED, tvVal));
+            fields.add(newField("f" + nextInt(100), getString(bigFieldSize), Field.Store.YES, Field.Index.ANALYZED, tvVal));
             break;          
         }
       }
@@ -693,19 +717,28 @@ public class TestStressIndexing2 extends MultiCodecTestCase {
       for (int i=0; i<fields.size(); i++) {
         d.add(fields.get(i));
       }
+      if (VERBOSE) {
+        System.out.println(Thread.currentThread().getName() + ": indexing id:" + idString);
+      }
       w.updateDocument(idTerm.createTerm(idString), d);
-      // System.out.println("indexing "+d);
+      //System.out.println(Thread.currentThread().getName() + ": indexing "+d);
       docs.put(idString, d);
     }
 
     public void deleteDoc() throws IOException {
       String idString = getIdString();
+      if (VERBOSE) {
+        System.out.println(Thread.currentThread().getName() + ": del id:" + idString);
+      }
       w.deleteDocuments(idTerm.createTerm(idString));
       docs.remove(idString);
     }
 
     public void deleteByQuery() throws IOException {
       String idString = getIdString();
+      if (VERBOSE) {
+        System.out.println(Thread.currentThread().getName() + ": del query id:" + idString);
+      }
       w.deleteDocuments(new TermQuery(idTerm.createTerm(idString)));
       docs.remove(idString);
     }

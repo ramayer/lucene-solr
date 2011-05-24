@@ -18,10 +18,10 @@ package org.apache.lucene.search;
  */
 
 import java.io.IOException;
-import java.util.Random;
 
 import org.apache.lucene.document.Document;
 import org.apache.lucene.index.IndexReader;
+import org.apache.lucene.index.IndexReader.AtomicReaderContext;
 import org.apache.lucene.index.RandomIndexWriter;
 import org.apache.lucene.store.Directory;
 import org.apache.lucene.util.LuceneTestCase;
@@ -61,9 +61,9 @@ public class TestTopDocsCollector extends LuceneTestCase {
     }
 
     @Override
-    public void setNextReader(IndexReader reader, int docBase)
+    public void setNextReader(AtomicReaderContext context)
         throws IOException {
-      base = docBase;
+      base = context.docBase;
     }
 
     @Override
@@ -95,7 +95,7 @@ public class TestTopDocsCollector extends LuceneTestCase {
 
   private TopDocsCollector<ScoreDoc> doSearch(int numResults) throws IOException {
     Query q = new MatchAllDocsQuery();
-    IndexSearcher searcher = new IndexSearcher(reader);
+    IndexSearcher searcher = newSearcher(reader);
     TopDocsCollector<ScoreDoc> tdc = new MyTopsDocCollector(numResults);
     searcher.search(q, tdc);
     searcher.close();
@@ -103,13 +103,12 @@ public class TestTopDocsCollector extends LuceneTestCase {
   }
   
   @Override
-  protected void setUp() throws Exception {
+  public void setUp() throws Exception {
     super.setUp();
     
     // populate an index with 30 documents, this should be enough for the test.
     // The documents have no content - the test uses MatchAllDocsQuery().
-    Random random = newRandom();
-    dir = newDirectory(random);
+    dir = newDirectory();
     RandomIndexWriter writer = new RandomIndexWriter(random, dir);
     for (int i = 0; i < 30; i++) {
       writer.addDocument(new Document());
@@ -119,7 +118,7 @@ public class TestTopDocsCollector extends LuceneTestCase {
   }
   
   @Override
-  protected void tearDown() throws Exception {
+  public void tearDown() throws Exception {
     reader.close();
     dir.close();
     dir = null;

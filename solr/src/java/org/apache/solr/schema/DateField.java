@@ -18,7 +18,7 @@
 package org.apache.solr.schema;
 
 import org.apache.lucene.document.Fieldable;
-import org.apache.lucene.index.IndexReader;
+import org.apache.lucene.index.IndexReader.AtomicReaderContext;
 import org.apache.lucene.search.Query;
 import org.apache.lucene.search.SortField;
 import org.apache.lucene.search.TermRangeQuery;
@@ -28,7 +28,6 @@ import org.apache.solr.common.SolrException;
 import org.apache.solr.common.util.DateUtil;
 import org.apache.solr.request.SolrQueryRequest;
 import org.apache.solr.response.TextResponseWriter;
-import org.apache.solr.response.XMLWriter;
 import org.apache.solr.search.QParser;
 import org.apache.solr.search.function.*;
 import org.apache.solr.util.ByteUtils;
@@ -126,12 +125,14 @@ public class DateField extends FieldType {
   // The easiest fix is to simply remove the 'Z' for the internal
   // format.
   
+  @Override
   protected void init(IndexSchema schema, Map<String,String> args) {
   }
 
   protected static String NOW = "NOW";
   protected static char Z = 'Z';
   
+  @Override
   public String toInternal(String val) {
     return toInternal(parseMath(null, val));
   }
@@ -179,11 +180,20 @@ public class DateField extends FieldType {
                                "Invalid Date Math String:'" +val+'\'',e);
     }
   }
+
+  public Fieldable createField(SchemaField field, Object value, float boost) {
+    // Convert to a string before indexing
+    if(value instanceof Date) {
+      value = toInternal( (Date)value ) + 'Z';
+    }
+    return super.createField(field, value, boost);
+  }
   
   public String toInternal(Date val) {
     return formatDate(val);
   }
 
+  @Override
   public String indexedToReadable(String indexedForm) {
     return indexedForm + Z;
   }
@@ -194,6 +204,7 @@ public class DateField extends FieldType {
     out.write(Z);
   }
 
+  @Override
   public String toExternal(Fieldable f) {
     return indexedToReadable(f.stringValue());
   }
@@ -212,18 +223,12 @@ public class DateField extends FieldType {
     }
   }
 
+  @Override
   public SortField getSortField(SchemaField field,boolean reverse) {
     return getStringSort(field,reverse);
   }
 
-  public ValueSource getValueSource(SchemaField field) {
-    return new OrdFieldSource(field.name);
-  }
-
-  public void write(XMLWriter xmlWriter, String name, Fieldable f) throws IOException {
-    xmlWriter.writeDate(name, toExternal(f));
-  }
-
+  @Override
   public void write(TextResponseWriter writer, String name, Fieldable f) throws IOException {
     writer.writeDate(name, toExternal(f));
   }
@@ -236,6 +241,7 @@ public class DateField extends FieldType {
    * 
    * @deprecated - use formatDate(Date) instead
    */
+  @Deprecated
   protected DateFormat getThreadLocalDateFormat() {
     return fmtThreadLocal.get();
   }
@@ -340,6 +346,7 @@ public class DateField extends FieldType {
       this.setTimeZone(CANONICAL_TZ);
     }
 
+    @Override
     public Date parse(String i, ParsePosition p) {
       /* delegate to SimpleDateFormat for easy stuff */
       Date d = super.parse(i, p);
@@ -361,6 +368,7 @@ public class DateField extends FieldType {
       return d;
     }
 
+    @Override
     public StringBuffer format(Date d, StringBuffer toAppendTo,
                                FieldPosition pos) {
       /* delegate to SimpleDateFormat for easy stuff */
@@ -379,6 +387,7 @@ public class DateField extends FieldType {
       return toAppendTo;
     }
 
+    @Override
     public Object clone() {
       ISO8601CanonicalDateFormat c
         = (ISO8601CanonicalDateFormat) super.clone();
@@ -395,6 +404,7 @@ public class DateField extends FieldType {
       super();
       proto = d;
     }
+    @Override
     protected DateFormat initialValue() {
       return (DateFormat) proto.clone();
     }
@@ -402,12 +412,13 @@ public class DateField extends FieldType {
 
   @Override
   public ValueSource getValueSource(SchemaField field, QParser parser) {
+    field.checkFieldCacheSource(parser);
     return new DateFieldSource(field.getName(), field.getType());
   }
 
   /** DateField specific range query */
   public Query getRangeQuery(QParser parser, SchemaField sf, Date part1, Date part2, boolean minInclusive, boolean maxInclusive) {
-    return new TermRangeQuery(
+    return TermRangeQuery.newStringRange(
             sf.getName(),
             part1 == null ? null : toInternal(part1),
             part2 == null ? null : toInternal(part2),
@@ -427,34 +438,42 @@ class DateFieldSource extends FieldCacheSource {
     this.ft = ft;
   }
 
+  @Override
   public String description() {
     return "date(" + field + ')';
   }
 
-  public DocValues getValues(Map context, IndexReader reader) throws IOException {
-    return new StringIndexDocValues(this, reader, field) {
+  @Override
+  public DocValues getValues(Map context, AtomicReaderContext readerContext) throws IOException {
+    return new StringIndexDocValues(this, readerContext, field) {
+      @Override
       protected String toTerm(String readableValue) {
         // needed for frange queries to work properly
         return ft.toInternal(readableValue);
       }
 
+      @Override
       public float floatVal(int doc) {
         return (float)intVal(doc);
       }
 
+      @Override
       public int intVal(int doc) {
         int ord=termsIndex.getOrd(doc);
         return ord;
       }
 
+      @Override
       public long longVal(int doc) {
         return (long)intVal(doc);
       }
 
+      @Override
       public double doubleVal(int doc) {
         return (double)intVal(doc);
       }
 
+      @Override
       public String strVal(int doc) {
         int ord=termsIndex.getOrd(doc);
         if (ord == 0) {
@@ -467,18 +486,32 @@ class DateFieldSource extends FieldCacheSource {
         }
       }
 
+      @Override
+      public Object objectVal(int doc) {
+        int ord=termsIndex.getOrd(doc);
+        if (ord == 0) {
+          return null;
+        } else {
+          BytesRef br = termsIndex.lookup(ord, new BytesRef());
+          return ft.toObject(null, br);
+        }
+      }
+
+      @Override
       public String toString(int doc) {
         return description() + '=' + intVal(doc);
       }
     };
   }
 
+  @Override
   public boolean equals(Object o) {
     return o instanceof DateFieldSource
             && super.equals(o);
   }
 
   private static int hcode = DateFieldSource.class.hashCode();
+  @Override
   public int hashCode() {
     return hcode + super.hashCode();
   };

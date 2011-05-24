@@ -17,6 +17,7 @@
 
 package org.apache.solr.handler.dataimport;
 
+import org.apache.solr.common.SolrException;
 import org.apache.solr.common.SolrInputDocument;
 import org.apache.solr.core.SolrCore;
 import static org.apache.solr.handler.dataimport.SolrWriter.LAST_INDEX_KEY;
@@ -31,8 +32,8 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.*;
 
 /**
- * <p> DocBuilder is responsible for creating Solr documents out of the given configuration. It also maintains
- * statistics information. It depends on the EntityProcessor implementations to fetch data. </p>
+ * <p> {@link DocBuilder} is responsible for creating Solr documents out of the given configuration. It also maintains
+ * statistics information. It depends on the {@link EntityProcessor} implementations to fetch data. </p>
  * <p/>
  * <b>This API is experimental and subject to change</b>
  *
@@ -139,6 +140,7 @@ public class DocBuilder {
     document = dataImporter.getConfig().document;
     final AtomicLong startTime = new AtomicLong(System.currentTimeMillis());
     statusMessages.put(TIME_ELAPSED, new Object() {
+      @Override
       public String toString() {
         return getTimeElapsedSince(startTime.get());
       }
@@ -205,6 +207,11 @@ public class DocBuilder {
         // Finished operation normally, commit now
         finish(lastIndexTimeProps);
       }
+      
+      if (writer != null) {
+        writer.finish();
+      }
+      
       if (document.onImportEnd != null) {
         invokeEventListener(document.onImportEnd);
       }
@@ -309,9 +316,14 @@ public class DocBuilder {
     Iterator<Map<String, Object>> iter = deletedKeys.iterator();
     while (iter.hasNext()) {
       Map<String, Object> map = iter.next();
-      Object key = map.get(root.getPk());
+      String keyName = root.isDocRoot ? root.getPk() : root.getSchemaPk();
+      Object key = map.get(keyName);
       if(key == null) {
-        LOG.warn("no key was available for deleteted pk query");
+        keyName = findMatchingPkColumn(keyName, map);
+        key = map.get(keyName);
+      }
+      if(key == null) {
+        LOG.warn("no key was available for deleted pk query. keyName = " + keyName);
         continue;
       }
       writer.deleteDoc(key);
@@ -479,7 +491,7 @@ public class DocBuilder {
                 importStatistics.skipDocCount.getAndIncrement();
                 exception = null;//should not propogate up
               } else {
-                LOG.error("Exception while processing: "
+                SolrException.log(LOG, "Exception while processing: "
                         + entity.name + " document : " + docWrapper, dihe);
               }
               if (dihe.getErrCode() == DataImportHandlerException.SEVERE)
@@ -602,7 +614,8 @@ public class DocBuilder {
           if (entity.entities != null) {
             vr.addNamespace(entity.name, arow);
             for (DataConfig.Entity child : entity.entities) {
-              buildDocument(vr, doc, null, child, false, ctx);
+              buildDocument(vr, doc,
+                  child.isDocRoot ? pk : null, child, false, ctx);
             }
             vr.removeNamespace(entity.name);
           }
@@ -637,7 +650,7 @@ public class DocBuilder {
               importStatistics.skipDocCount.getAndIncrement();
               doc = null;
             } else {
-              LOG.error("Exception while processing: "
+              SolrException.log(LOG, "Exception while processing: "
                       + entity.name + " document : " + doc, e);
             }
             if (e.getErrCode() == DataImportHandlerException.SEVERE)
@@ -808,6 +821,28 @@ public class DocBuilder {
     return entity.processor = new EntityProcessorWrapper(entityProcessor, this);
   }
 
+  private String findMatchingPkColumn(String pk, Map<String, Object> row) {
+    if (row.containsKey(pk))
+      throw new IllegalArgumentException(
+        String.format("deltaQuery returned a row with null for primary key %s", pk));
+    String resolvedPk = null;
+    for (String columnName : row.keySet()) {
+      if (columnName.endsWith("." + pk) || pk.endsWith("." + columnName)) {
+        if (resolvedPk != null)
+          throw new IllegalArgumentException(
+            String.format(
+              "deltaQuery has more than one column (%s and %s) that might resolve to declared primary key pk='%s'",
+              resolvedPk, columnName, pk));
+        resolvedPk = columnName;
+      }
+    }
+    if (resolvedPk == null)
+      throw new IllegalArgumentException(
+        String.format("deltaQuery has no column to resolve to declared primary key pk='%s'", pk));
+    LOG.info(String.format("Resolving deltaQuery column '%s' to match entity's declared pk '%s'", resolvedPk, pk));
+    return resolvedPk;
+  }
+
   /**
    * <p> Collects unique keys of all Solr documents for whom one or more source tables have been changed since the last
    * indexed time. </p> <p> Note: In our definition, unique key of Solr document is the primary key of the top level
@@ -841,16 +876,23 @@ public class DocBuilder {
     }
     // identifying the modified rows for this entity
 
-    Set<Map<String, Object>> deltaSet = new HashSet<Map<String, Object>>();
+    Map<String, Map<String, Object>> deltaSet = new HashMap<String, Map<String, Object>>();
     LOG.info("Running ModifiedRowKey() for Entity: " + entity.name);
     //get the modified rows in this entity
+    String pk = entity.getPk();
     while (true) {
       Map<String, Object> row = entityProcessor.nextModifiedRowKey();
 
       if (row == null)
         break;
 
-      deltaSet.add(row);
+      Object pkValue = row.get(pk);
+      if (pkValue == null) {
+        pk = findMatchingPkColumn(pk, row);
+        pkValue = row.get(pk);
+      }
+
+      deltaSet.put(pkValue.toString(), row);
       importStatistics.rowsCount.incrementAndGet();
       // check for abort
       if (stop.get())
@@ -858,33 +900,35 @@ public class DocBuilder {
     }
     //get the deleted rows for this entity
     Set<Map<String, Object>> deletedSet = new HashSet<Map<String, Object>>();
-    Set<Map<String, Object>> deltaRemoveSet = new HashSet<Map<String, Object>>();
     while (true) {
       Map<String, Object> row = entityProcessor.nextDeletedRowKey();
       if (row == null)
         break;
 
-      //Check to see if this delete is in the current delta set
-      for (Map<String, Object> modifiedRow : deltaSet) {
-        if (modifiedRow.get(entity.getPk()).equals(row.get(entity.getPk()))) {
-          deltaRemoveSet.add(modifiedRow);
-        }
+      deletedSet.add(row);
+      
+      Object pkValue = row.get(pk);
+      if (pkValue == null) {
+        pk = findMatchingPkColumn(pk, row);
+        pkValue = row.get(pk);
       }
 
-      deletedSet.add(row);
+      // Remove deleted rows from the delta rows
+      String deletedRowPk = pkValue.toString();
+      if (deltaSet.containsKey(deletedRowPk)) {
+        deltaSet.remove(deletedRowPk);
+      }
+
       importStatistics.rowsCount.incrementAndGet();
       // check for abort
       if (stop.get())
         return new HashSet();
     }
 
-    //asymmetric Set difference
-    deltaSet.removeAll(deltaRemoveSet);
-
     LOG.info("Completed ModifiedRowKey for Entity: " + entity.name + " rows obtained : " + deltaSet.size());
     LOG.info("Completed DeletedRowKey for Entity: " + entity.name + " rows obtained : " + deletedSet.size());
 
-    myModifiedPks.addAll(deltaSet);
+    myModifiedPks.addAll(deltaSet.values());
     Set<Map<String, Object>> parentKeyList = new HashSet<Map<String, Object>>();
     //all that we have captured is useless (in a sub-entity) if no rows in the parent is modified because of these
     //propogate up the changes in the chain
@@ -909,8 +953,9 @@ public class DocBuilder {
     if (entity.isDocRoot)
       deletedRows.addAll(deletedSet);
 
-    return entity.isDocRoot ? myModifiedPks : new HashSet<Map<String, Object>>(
-            parentKeyList);
+    // Do not use entity.isDocRoot here because one of descendant entities may set rootEntity="true"
+    return entity.parentEntity == null ?
+        myModifiedPks : new HashSet<Map<String, Object>>(parentKeyList);
   }
 
   private void getModifiedParentRows(VariableResolverImpl resolver,
@@ -945,7 +990,7 @@ public class DocBuilder {
 
   static String getTimeElapsedSince(long l) {
     l = System.currentTimeMillis() - l;
-    return (l / (60000 * 60)) % 60 + ":" + (l / 60000) % 60 + ":" + (l / 1000)
+    return (l / (60000 * 60)) + ":" + (l / 60000) % 60 + ":" + (l / 1000)
             % 60 + "." + l % 1000;
   }
 

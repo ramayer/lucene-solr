@@ -17,6 +17,7 @@
 
 package org.apache.solr.core;
 
+import org.apache.solr.common.SolrException;
 import org.apache.solr.common.util.DOMUtil;
 import org.apache.solr.common.util.RegexFileFilter;
 import org.apache.solr.common.util.NamedList;
@@ -26,6 +27,7 @@ import org.apache.solr.request.LocalSolrQueryRequest;
 import org.apache.solr.request.SolrQueryRequest;
 import org.apache.solr.request.SolrRequestHandler;
 import org.apache.solr.response.QueryResponseWriter;
+import org.apache.solr.response.transform.TransformerFactory;
 
 import org.apache.solr.search.CacheConfig;
 import org.apache.solr.search.FastLRUCache;
@@ -44,6 +46,7 @@ import org.slf4j.LoggerFactory;
 
 import org.w3c.dom.Node;
 import org.w3c.dom.NodeList;
+import org.xml.sax.InputSource;
 import org.xml.sax.SAXException;
 
 import javax.xml.parsers.ParserConfigurationException;
@@ -54,7 +57,6 @@ import java.util.regex.Pattern;
 import java.util.regex.Matcher;
 import java.io.FileFilter;
 import java.io.IOException;
-import java.io.InputStream;
 
 
 /**
@@ -70,12 +72,6 @@ public class SolrConfig extends Config {
   
   public static final String DEFAULT_CONF_FILE = "solrconfig.xml";
 
-  /**
-   * Compatibility feature for single-core (pre-solr{215,350} patch); should go away at solr-2.0
-   * @deprecated Use {@link SolrCore#getSolrConfig()} instead.
-   */
-  @Deprecated
-  public static SolrConfig config = null; 
 
   /**
    * Singleton keeping track of configuration errors
@@ -107,7 +103,7 @@ public class SolrConfig extends Config {
    *@param name the configuration name
    *@param is the configuration stream
    */
-  public SolrConfig(String name, InputStream is)
+  public SolrConfig(String name, InputSource is)
   throws ParserConfigurationException, IOException, SAXException {
     this( (SolrResourceLoader) null, name, is );
   }
@@ -117,7 +113,7 @@ public class SolrConfig extends Config {
    *@param name the configuration name used by the loader if the stream is null
    *@param is the configuration stream 
    */
-  public SolrConfig(String instanceDir, String name, InputStream is)
+  public SolrConfig(String instanceDir, String name, InputSource is)
   throws ParserConfigurationException, IOException, SAXException {
     this(new SolrResourceLoader(instanceDir), name, is);
   }
@@ -129,16 +125,16 @@ public class SolrConfig extends Config {
    *@param name the configuration name
    *@param is the configuration stream
    */
-  SolrConfig(SolrResourceLoader loader, String name, InputStream is)
+  SolrConfig(SolrResourceLoader loader, String name, InputSource is)
   throws ParserConfigurationException, IOException, SAXException {
     super(loader, name, is, "/config/");
     initLibs();
+    luceneMatchVersion = getLuceneVersion("luceneMatchVersion");
     defaultIndexConfig = new SolrIndexConfig(this, null, null);
     mainIndexConfig = new SolrIndexConfig(this, "mainIndex", defaultIndexConfig);
     reopenReaders = getBool("mainIndex/reopenReaders", true);
     
     booleanQueryMaxClauseCount = getInt("query/maxBooleanClauses", BooleanQuery.getMaxClauseCount());
-    luceneMatchVersion = getLuceneVersion("luceneMatchVersion", Version.LUCENE_24);
     log.info("Using Lucene MatchVersion: " + luceneMatchVersion);
 
     filtOptEnabled = getBool("query/boolTofilterOptimizer/@enabled", false);
@@ -146,7 +142,7 @@ public class SolrConfig extends Config {
     filtOptThreshold = getFloat("query/boolTofilterOptimizer/@threshold",.05f);
     
     useFilterForSortedQuery = getBool("query/useFilterForSortedQuery", false);
-    queryResultWindowSize = getInt("query/queryResultWindowSize", 1);
+    queryResultWindowSize = Math.max(1, getInt("query/queryResultWindowSize", 1));
     queryResultMaxDocsCached = getInt("query/queryResultMaxDocsCached", Integer.MAX_VALUE);
     enableLazyFieldLoading = getBool("query/enableLazyFieldLoading", false);
 
@@ -175,12 +171,10 @@ public class SolrConfig extends Config {
 
     hashSetInverseLoadFactor = 1.0f / getFloat("//HashDocSet/@loadFactor",0.75f);
     hashDocSetMaxSize= getInt("//HashDocSet/@maxSize",3000);
-    
-    pingQueryParams = readPingQueryParams(this);
 
     httpCachingConfig = new HttpCachingConfig(this);
     
-    Node jmx = (Node) getNode("jmx", false);
+    Node jmx = getNode("jmx", false);
     if (jmx != null) {
       jmxConfig = new JmxConfiguration(true, 
                                        get("jmx/@agentId", null), 
@@ -196,25 +190,24 @@ public class SolrConfig extends Config {
      loadPluginInfo(QParserPlugin.class,"queryParser",true, true);
      loadPluginInfo(QueryResponseWriter.class,"queryResponseWriter",true, true);
      loadPluginInfo(ValueSourceParser.class,"valueSourceParser",true, true);
+     loadPluginInfo(TransformerFactory.class,"transformer",true, true);
      loadPluginInfo(SearchComponent.class,"searchComponent",true, true);
      loadPluginInfo(QueryConverter.class,"queryConverter",true, true);
+
+     // this is hackish, since it picks up all SolrEventListeners,
+     // regardless of when/how/why thye are used (or even if they are 
+     // declared outside of the appropriate context) but there's no nice 
+     // way arround that in the PluginInfo framework
      loadPluginInfo(SolrEventListener.class, "//listener",false, true);
+
      loadPluginInfo(DirectoryFactory.class,"directoryFactory",false, true);
      loadPluginInfo(IndexDeletionPolicy.class,"mainIndex/deletionPolicy",false, true);
      loadPluginInfo(IndexReaderFactory.class,"indexReaderFactory",false, true);
      loadPluginInfo(UpdateRequestProcessorChain.class,"updateRequestProcessorChain",false, false);
 
-     //TODO deprecated remove it later
-     loadPluginInfo(SolrHighlighter.class,"highlighting",false, false);
-     if( pluginStore.containsKey( SolrHighlighter.class.getName() ) )
-       log.warn( "Deprecated syntax found. <highlighting/> should move to <searchComponent/>" );
-
      updateHandlerInfo = loadUpdatehandlerInfo();
 
     Config.log.info("Loaded SolrConfig: " + name);
-    
-    // TODO -- at solr 2.0. this should go away
-    config = this;
   }
 
   protected UpdateHandlerInfo loadUpdatehandlerInfo() {
@@ -281,47 +274,6 @@ public class SolrConfig extends Config {
   public HttpCachingConfig getHttpCachingConfig() {
     return httpCachingConfig;
   }
-  
-  /**
-   * ping query request parameters
-   * @deprecated Use {@link PingRequestHandler} instead.
-   */
-  @Deprecated
-  private final NamedList pingQueryParams;
-
-  static private NamedList readPingQueryParams(SolrConfig config) {  
-    String urlSnippet = config.get("admin/pingQuery", "").trim();
-    
-    StringTokenizer qtokens = new StringTokenizer(urlSnippet,"&");
-    String tok;
-    NamedList params = new NamedList();
-    while (qtokens.hasMoreTokens()) {
-      tok = qtokens.nextToken();
-      String[] split = tok.split("=", 2);
-      params.add(split[0], split[1]);
-    }
-    if (0 < params.size()) {
-      log.warn("The <pingQuery> syntax is deprecated, " +
-               "please use PingRequestHandler instead");
-    }
-    return params;
-  }
-  
-  /**
-   * Returns a Request object based on the admin/pingQuery section
-   * of the Solr config file.
-   * 
-   * @deprecated use {@link PingRequestHandler} instead 
-   */
-  @Deprecated
-  public SolrQueryRequest getPingQueryRequest(SolrCore core) {
-    if(pingQueryParams.size() == 0) {
-      throw new IllegalStateException
-        ("<pingQuery> not configured (consider registering " +
-         "PingRequestHandler with the name '/admin/ping' instead)");
-    }
-    return new LocalSolrQueryRequest(core, pingQueryParams);
-  }
 
   public static class JmxConfiguration {
     public boolean enabled = false;
@@ -329,12 +281,6 @@ public class SolrConfig extends Config {
     public String serviceUrl;
     public String rootName;
 
-    @Deprecated
-    public JmxConfiguration(boolean enabled, 
-                            String agentId, 
-                            String serviceUrl) {
-      this(enabled,agentId,serviceUrl,null);
-    }
     public JmxConfiguration(boolean enabled, 
                             String agentId, 
                             String serviceUrl,
@@ -451,7 +397,7 @@ public class SolrConfig extends Config {
    * @param type The key is FQN of the plugin class there are a few  known types : SolrFormatter, SolrFragmenter
    * SolrRequestHandler,QParserPlugin, QueryResponseWriter,ValueSourceParser,
    * SearchComponent, QueryConverter, SolrEventListener, DirectoryFactory,
-   * IndexDeletionPolicy, IndexReaderFactory
+   * IndexDeletionPolicy, IndexReaderFactory, {@link TransformerFactory}
    */
   public List<PluginInfo> getPluginInfos(String  type){
     List<PluginInfo> result = pluginStore.get(type);

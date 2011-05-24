@@ -16,7 +16,6 @@ package org.apache.lucene.search;
  * limitations under the License.
  */
 import java.io.IOException;
-import java.util.Random;
 
 import org.apache.lucene.util.LuceneTestCase;
 
@@ -25,11 +24,6 @@ import org.apache.lucene.document.Field;
 import org.apache.lucene.index.IndexReader;
 import org.apache.lucene.index.RandomIndexWriter;
 import org.apache.lucene.index.Term;
-import org.apache.lucene.search.BooleanClause;
-import org.apache.lucene.search.BooleanQuery;
-import org.apache.lucene.search.IndexSearcher;
-import org.apache.lucene.search.Query;
-import org.apache.lucene.search.TermQuery;
 import org.apache.lucene.store.Directory;
 
 public class TestBooleanOr extends LuceneTestCase {
@@ -48,7 +42,7 @@ public class TestBooleanOr extends LuceneTestCase {
   
 
   private int search(Query q) throws IOException {
-    QueryUtils.check(q,searcher);
+    QueryUtils.check(random, q,searcher);
     return searcher.search(q, null, 1000).totalHits;
   }
 
@@ -132,12 +126,11 @@ public class TestBooleanOr extends LuceneTestCase {
   }
 
   @Override
-  protected void setUp() throws Exception {
+  public void setUp() throws Exception {
     super.setUp();
 
     //
-    Random random = newRandom();
-    dir = newDirectory(random);
+    dir = newDirectory();
 
 
     //
@@ -145,12 +138,12 @@ public class TestBooleanOr extends LuceneTestCase {
 
     //
     Document d = new Document();
-    d.add(new Field(
+    d.add(newField(
         FIELD_T,
         "Optimize not deleting all files",
         Field.Store.YES,
         Field.Index.ANALYZED));
-    d.add(new Field(
+    d.add(newField(
         FIELD_C,
         "Deleted When I run an optimize in our production environment.",
         Field.Store.YES,
@@ -161,12 +154,12 @@ public class TestBooleanOr extends LuceneTestCase {
 
     reader = writer.getReader();
     //
-    searcher = new IndexSearcher(reader);
+    searcher = newSearcher(reader);
     writer.close();
   }
 
   @Override
-  protected void tearDown() throws Exception {
+  public void tearDown() throws Exception {
     searcher.close();
     reader.close();
     dir.close();

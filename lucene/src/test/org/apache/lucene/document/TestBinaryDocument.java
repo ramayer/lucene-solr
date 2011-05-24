@@ -1,7 +1,5 @@
 package org.apache.lucene.document;
 
-import java.util.Random;
-
 import org.apache.lucene.util.LuceneTestCase;
 
 import org.apache.lucene.index.IndexReader;
@@ -39,14 +37,6 @@ public class TestBinaryDocument extends LuceneTestCase {
     Fieldable binaryFldStored = new Field("binaryStored", binaryValStored.getBytes());
     Fieldable stringFldStored = new Field("stringStored", binaryValStored, Field.Store.YES, Field.Index.NO, Field.TermVector.NO);
 
-    try {
-      // binary fields with store off are not allowed
-      new Field("fail", binaryValStored.getBytes(), Field.Store.NO);
-      fail();
-    }
-    catch (IllegalArgumentException iae) {
-    }
-    
     Document doc = new Document();
     
     doc.add(binaryFldStored);
@@ -57,8 +47,7 @@ public class TestBinaryDocument extends LuceneTestCase {
     assertEquals(2, doc.fields.size());
     
     /** add the doc to a ram index */
-    Random random = newRandom();
-    Directory dir = newDirectory(random);
+    Directory dir = newDirectory();
     RandomIndexWriter writer = new RandomIndexWriter(random, dir);
     writer.addDocument(doc);
     
@@ -97,8 +86,7 @@ public class TestBinaryDocument extends LuceneTestCase {
     doc.add(stringFldCompressed);
     
     /** add the doc to a ram index */
-    Random random = newRandom();
-    Directory dir = newDirectory(random);
+    Directory dir = newDirectory();
     RandomIndexWriter writer = new RandomIndexWriter(random, dir);
     writer.addDocument(doc);
     

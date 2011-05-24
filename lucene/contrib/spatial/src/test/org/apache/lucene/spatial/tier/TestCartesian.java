@@ -20,7 +20,6 @@ import java.io.IOException;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
-import java.util.Random;
 
 import org.apache.lucene.analysis.MockAnalyzer;
 import org.apache.lucene.document.Document;
@@ -68,12 +67,11 @@ public class TestCartesian extends LuceneTestCase {
 
 
   @Override
-  protected void setUp() throws Exception {
+  public void setUp() throws Exception {
     super.setUp();
-    Random random = newRandom();
-    directory = newDirectory(random);
+    directory = newDirectory();
 
-    IndexWriter writer = new IndexWriter(directory, newIndexWriterConfig(random, TEST_VERSION_CURRENT, new MockAnalyzer()));
+    IndexWriter writer = new IndexWriter(directory, newIndexWriterConfig(TEST_VERSION_CURRENT, new MockAnalyzer(random)));
     
     setUpPlotter( 2, 15);
     
@@ -82,7 +80,7 @@ public class TestCartesian extends LuceneTestCase {
   }
   
   @Override
-  protected void tearDown() throws Exception {
+  public void tearDown() throws Exception {
     directory.close();
     super.tearDown();
   }
@@ -100,14 +98,14 @@ public class TestCartesian extends LuceneTestCase {
     
     Document doc = new Document();
     
-    doc.add(new Field("name", name,Field.Store.YES, Field.Index.ANALYZED));
+    doc.add(newField("name", name,Field.Store.YES, Field.Index.ANALYZED));
     
     // convert the lat / long to lucene fields
     doc.add(new NumericField(latField, Integer.MAX_VALUE, Field.Store.YES, true).setDoubleValue(lat));
     doc.add(new NumericField(lngField, Integer.MAX_VALUE, Field.Store.YES, true).setDoubleValue(lng));
     
     // add a default meta field to make searching all documents easy 
-    doc.add(new Field("metafile", "doc",Field.Store.YES, Field.Index.ANALYZED));
+    doc.add(newField("metafile", "doc",Field.Store.YES, Field.Index.ANALYZED));
     
     int ctpsize = ctps.size();
     for (int i =0; i < ctpsize; i++){
@@ -116,7 +114,7 @@ public class TestCartesian extends LuceneTestCase {
           Field.Store.YES, 
           true).setDoubleValue(ctp.getTierBoxId(lat,lng)));
       
-      doc.add(new Field(geoHashPrefix, GeoHashUtils.encode(lat,lng), 
+      doc.add(newField(geoHashPrefix, GeoHashUtils.encode(lat,lng), 
     		  Field.Store.YES, 
     		  Field.Index.NOT_ANALYZED_NO_NORMS));
     }
@@ -254,7 +252,7 @@ public class TestCartesian extends LuceneTestCase {
 
     // Perform the search, using the term query, the serial chain filter, and the
     // distance sort
-    TopDocs hits = searcher.search(customScore.createWeight(searcher),null, 1000, sort);
+    TopDocs hits = searcher.search(customScore,null, 1000, sort);
     int results = hits.totalHits;
     ScoreDoc[] scoreDocs = hits.scoreDocs; 
     
@@ -350,7 +348,7 @@ public class TestCartesian extends LuceneTestCase {
 
     // Perform the search, using the term query, the serial chain filter, and the
     // distance sort
-    TopDocs hits = searcher.search(customScore.createWeight(searcher),null, 1000, sort);
+    TopDocs hits = searcher.search(customScore,null, 1000, sort);
     int results = hits.totalHits;
     ScoreDoc[] scoreDocs = hits.scoreDocs; 
 
@@ -446,7 +444,7 @@ public class TestCartesian extends LuceneTestCase {
     
       // Perform the search, using the term query, the serial chain filter, and the
       // distance sort
-      TopDocs hits = searcher.search(customScore.createWeight(searcher),null, 1000, sort);
+      TopDocs hits = searcher.search(customScore,null, 1000, sort);
       int results = hits.totalHits;
       ScoreDoc[] scoreDocs = hits.scoreDocs; 
     
@@ -541,7 +539,7 @@ public class TestCartesian extends LuceneTestCase {
 	    
       // Perform the search, using the term query, the serial chain filter, and the
       // distance sort
-      TopDocs hits = searcher.search(customScore.createWeight(searcher),dq.getFilter(), 1000); //,sort);
+      TopDocs hits = searcher.search(customScore,dq.getFilter(), 1000); //,sort);
       int results = hits.totalHits;
       ScoreDoc[] scoreDocs = hits.scoreDocs; 
 	    

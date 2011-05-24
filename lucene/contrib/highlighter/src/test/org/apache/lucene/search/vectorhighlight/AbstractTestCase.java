@@ -85,18 +85,18 @@ public abstract class AbstractTestCase extends LuceneTestCase {
   };
 
   @Override
-  protected void setUp() throws Exception {
+  public void setUp() throws Exception {
     super.setUp();
-    analyzerW = new MockAnalyzer(MockTokenizer.WHITESPACE, false);
+    analyzerW = new MockAnalyzer(random, MockTokenizer.WHITESPACE, false);
     analyzerB = new BigramAnalyzer();
-    analyzerK = new MockAnalyzer(MockTokenizer.KEYWORD, false);
+    analyzerK = new MockAnalyzer(random, MockTokenizer.KEYWORD, false);
     paW = new QueryParser(TEST_VERSION_CURRENT,  F, analyzerW );
     paB = new QueryParser(TEST_VERSION_CURRENT,  F, analyzerB );
-    dir = newDirectory(newRandom());
+    dir = newDirectory();
   }
   
   @Override
-  protected void tearDown() throws Exception {
+  public void tearDown() throws Exception {
     if( reader != null ){
       reader.close();
       reader = null;
@@ -355,16 +355,20 @@ public abstract class AbstractTestCase extends LuceneTestCase {
   
   protected void makeIndexShortMV() throws Exception {
     
+    //  0
     // ""
+    //  1
     // ""
 
-    //  012345
+    //  234567
     // "a b c"
     //  0 1 2
-    
+
+    //  8
     // ""
 
-    //  6789
+    //   111
+    //  9012
     // "d e"
     //  3 4
     make1dmfIndex( shortMVValues );

@@ -21,6 +21,7 @@ import java.io.IOException;
 
 import org.apache.lucene.index.DocsEnum; // javadoc @link
 import org.apache.lucene.index.IndexReader;
+import org.apache.lucene.index.IndexReader.AtomicReaderContext;
 import org.apache.lucene.util.OpenBitSet;
 import org.apache.lucene.util.BytesRef;
 
@@ -115,8 +116,8 @@ public class FieldCacheTermsFilter extends Filter {
   }
 
   @Override
-  public DocIdSet getDocIdSet(IndexReader reader) throws IOException {
-    return new FieldCacheTermsFilterDocIdSet(getFieldCache().getTermsIndex(reader, field));
+  public DocIdSet getDocIdSet(AtomicReaderContext context) throws IOException {
+    return new FieldCacheTermsFilterDocIdSet(getFieldCache().getTermsIndex(context.reader, field));
   }
 
   protected class FieldCacheTermsFilterDocIdSet extends DocIdSet {
@@ -126,7 +127,7 @@ public class FieldCacheTermsFilter extends Filter {
 
     public FieldCacheTermsFilterDocIdSet(FieldCache.DocTermsIndex fcsi) {
       this.fcsi = fcsi;
-      openBitSet = new OpenBitSet(this.fcsi.size());
+      openBitSet = new OpenBitSet(this.fcsi.numOrd());
       final BytesRef spare = new BytesRef();
       for (int i=0;i<terms.length;i++) {
         int termNumber = this.fcsi.binarySearchLookup(terms[i], spare);

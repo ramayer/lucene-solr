@@ -55,24 +55,27 @@ public class TermsQueryBuilder implements QueryBuilder {
  		
 		BooleanQuery bq=new BooleanQuery(DOMUtils.getAttribute(e,"disableCoord",false));
 		bq.setMinimumNumberShouldMatch(DOMUtils.getAttribute(e,"minimumNumberShouldMatch",0));
-		TokenStream ts = analyzer.tokenStream(fieldName, new StringReader(text));
 		try
 		{
+	    TokenStream ts = analyzer.reusableTokenStream(fieldName, new StringReader(text));
 		  TermToBytesRefAttribute termAtt = ts.addAttribute(TermToBytesRefAttribute.class);
 			Term term = null;
+      BytesRef bytes = termAtt.getBytesRef();
+      ts.reset();
 			while (ts.incrementToken()) {
-        BytesRef bytes = new BytesRef();
-        termAtt.toBytesRef(bytes);
+        termAtt.fillBytesRef();
 				if (term == null)
 				{
-					term = new Term(fieldName, bytes);
+					term = new Term(fieldName, new BytesRef(bytes));
 				} else
 				{
 //					 create from previous to save fieldName.intern overhead
-					term = term.createTerm(bytes); 
+					term = term.createTerm(new BytesRef(bytes)); 
 				}
 				bq.add(new BooleanClause(new TermQuery(term),BooleanClause.Occur.SHOULD));
 			}
+			ts.end();
+			ts.close();
 		} 
 		catch (IOException ioe)
 		{

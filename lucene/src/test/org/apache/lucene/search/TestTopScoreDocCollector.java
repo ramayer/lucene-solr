@@ -17,8 +17,6 @@ package org.apache.lucene.search;
  * limitations under the License.
  */
 
-import java.util.Random;
-
 import org.apache.lucene.document.Document;
 import org.apache.lucene.index.IndexReader;
 import org.apache.lucene.index.RandomIndexWriter;
@@ -28,16 +26,8 @@ import org.apache.lucene.util.LuceneTestCase;
 
 public class TestTopScoreDocCollector extends LuceneTestCase {
 
-  public TestTopScoreDocCollector() {
-  }
-
-  public TestTopScoreDocCollector(String name) {
-    super(name);
-  }
-
   public void testOutOfOrderCollection() throws Exception {
-    Random random = newRandom();
-    Directory dir = newDirectory(random);
+    Directory dir = newDirectory();
     RandomIndexWriter writer = new RandomIndexWriter(random, dir);
     for (int i = 0; i < 10; i++) {
       writer.addDocument(new Document());
@@ -57,7 +47,7 @@ public class TestTopScoreDocCollector extends LuceneTestCase {
     // the clause instead of BQ.
     bq.setMinimumNumberShouldMatch(1);
     IndexReader reader = writer.getReader();
-    IndexSearcher searcher = new IndexSearcher(reader);
+    IndexSearcher searcher = newSearcher(reader);
     for (int i = 0; i < inOrder.length; i++) {
       TopDocsCollector<ScoreDoc> tdc = TopScoreDocCollector.create(3, inOrder[i]);
       assertEquals("org.apache.lucene.search.TopScoreDocCollector$" + actualTSDCClass[i], tdc.getClass().getName());

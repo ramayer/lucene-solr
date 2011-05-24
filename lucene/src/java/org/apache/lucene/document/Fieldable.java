@@ -22,7 +22,6 @@ import org.apache.lucene.search.PhraseQuery; // for javadocs
 import org.apache.lucene.search.spans.SpanQuery; // for javadocs
 
 import java.io.Reader;
-import java.io.Serializable;
 
 /**
  * Synonymous with {@link Field}.
@@ -34,7 +33,7 @@ import java.io.Serializable;
  * </p>
  *
  **/
-public interface Fieldable extends Serializable {
+public interface Fieldable {
   /** Sets the boost factor hits on this field.  This value will be
    * multiplied into the score of all hits on this this field of this
    * document.
@@ -44,16 +43,14 @@ public interface Fieldable extends Serializable {
    * name, all such values are multiplied together.  This product is then
    * used to compute the norm factor for the field.  By
    * default, in the {@link
-   * org.apache.lucene.search.Similarity#computeNorm(String,
-   * FieldInvertState)} method, the boost value is multiplied
-   * by the {@link
-   * org.apache.lucene.search.Similarity#lengthNorm(String,
-   * int)} and then rounded by {@link org.apache.lucene.search.Similarity#encodeNormValue(float)} before it is stored in the
+   * org.apache.lucene.search.Similarity#computeNorm(FieldInvertState)} method, the boost value is multiplied
+   * by the length normalization factor
+   * and then rounded by {@link org.apache.lucene.search.Similarity#encodeNormValue(float)} before it is stored in the
    * index.  One should attempt to ensure that this product does not overflow
    * the range of that encoding.
    *
    * @see org.apache.lucene.document.Document#setBoost(float)
-   * @see org.apache.lucene.search.Similarity#computeNorm(String, FieldInvertState)
+   * @see org.apache.lucene.search.Similarity#computeNorm(FieldInvertState)
    * @see org.apache.lucene.search.Similarity#encodeNormValue(float)
    */
   void setBoost(float boost);
@@ -64,7 +61,7 @@ public interface Fieldable extends Serializable {
    *
    * <p>Note: this value is not stored directly with the document in the index.
    * Documents returned from {@link org.apache.lucene.index.IndexReader#document(int)} and
-   * {@link org.apache.lucene.search.Searcher#doc(int)} may thus not have the same value present as when
+   * {@link org.apache.lucene.search.IndexSearcher#doc(int)} may thus not have the same value present as when
    * this field was indexed.
    *
    * @see #setBoost(float)
@@ -206,7 +203,7 @@ public interface Fieldable extends Serializable {
   * required in the index, it also means any query
   * requiring positional information, such as {@link
   * PhraseQuery} or {@link SpanQuery} subclasses will
-  * silently fail to find results.
+  * fail with an exception.
   */
   void setOmitTermFreqAndPositions(boolean omitTermFreqAndPositions);
 }

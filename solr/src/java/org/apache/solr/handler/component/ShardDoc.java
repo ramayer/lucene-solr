@@ -56,6 +56,7 @@ public class ShardDoc {
   int positionInResponse;
   // the ordinal position in the merged response arraylist  
 
+  @Override
   public String toString(){
     return "id="+id
             +" ,score="+score
@@ -81,6 +82,7 @@ class ShardFieldSortedHitQueue extends PriorityQueue {
   protected List<String> fieldNames = new ArrayList<String>();
 
   public ShardFieldSortedHitQueue(SortField[] fields, int size) {
+    super(size);
     final int n = fields.length;
     comparators = new Comparator[n];
     this.fields = new SortField[n];
@@ -94,10 +96,10 @@ class ShardFieldSortedHitQueue extends PriorityQueue {
 
       String fieldname = fields[i].getField();
       comparators[i] = getCachedComparator(fieldname, fields[i]
-          .getType(), fields[i].getLocale(), fields[i].getComparatorSource());
+          .getType(), fields[i].getComparatorSource());
 
      if (fields[i].getType() == SortField.STRING) {
-        this.fields[i] = new SortField(fieldname, fields[i].getLocale(),
+        this.fields[i] = new SortField(fieldname, SortField.STRING, 
             fields[i].getReverse());
       } else {
         this.fields[i] = new SortField(fieldname, fields[i].getType(),
@@ -106,8 +108,6 @@ class ShardFieldSortedHitQueue extends PriorityQueue {
 
       //System.out.println("%%%%%%%%%%%%%%%%%% got "+fields[i].getType() +"   for "+ fieldname +"  fields[i].getReverse(): "+fields[i].getReverse());
     }
-
-    initialize(size);
   }
 
   @Override
@@ -144,17 +144,14 @@ class ShardFieldSortedHitQueue extends PriorityQueue {
     return c < 0;
   }
 
-  Comparator getCachedComparator(String fieldname, int type, Locale locale, FieldComparatorSource factory) {
+  Comparator getCachedComparator(String fieldname, int type, FieldComparatorSource factory) {
     Comparator comparator = null;
     switch (type) {
     case SortField.SCORE:
       comparator = comparatorScore(fieldname);
       break;
     case SortField.STRING:
-      if (locale != null)
-        comparator = comparatorStringLocale(fieldname, locale);
-      else
-        comparator = comparatorNatural(fieldname);
+      comparator = comparatorNatural(fieldname);
       break;
     case SortField.CUSTOM:
       if (factory instanceof MissingStringLastComparatorSource){
@@ -226,6 +223,7 @@ class ShardFieldSortedHitQueue extends PriorityQueue {
   // the negative sign on the final compareTo().
   Comparator comparatorNatural(String fieldName) {
     return new ShardComparator(fieldName) {
+      @Override
       public final int compare(final Object o1, final Object o2) {
         ShardDoc sd1 = (ShardDoc) o1;
         ShardDoc sd2 = (ShardDoc) o2;
@@ -247,6 +245,7 @@ class ShardFieldSortedHitQueue extends PriorityQueue {
       Locale locale) {
     final Collator collator = Collator.getInstance(locale);
     return new ShardComparator(fieldName) {
+      @Override
       public final int compare(final Object o1, final Object o2) {
         ShardDoc sd1 = (ShardDoc) o1;
         ShardDoc sd2 = (ShardDoc) o2;
@@ -266,6 +265,7 @@ class ShardFieldSortedHitQueue extends PriorityQueue {
 
   Comparator comparatorMissingStringLast(final String fieldName) {
      return new ShardComparator(fieldName) {
+      @Override
       public final int compare(final Object o1, final Object o2) {
         ShardDoc sd1 = (ShardDoc) o1;
         ShardDoc sd2 = (ShardDoc) o2;

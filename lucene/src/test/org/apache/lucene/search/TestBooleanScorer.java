@@ -19,36 +19,30 @@ package org.apache.lucene.search;
 
 import java.io.IOException;
 import java.util.Arrays;
-import java.util.Random;
 
 import org.apache.lucene.document.Document;
 import org.apache.lucene.document.Field;
 import org.apache.lucene.index.IndexReader;
 import org.apache.lucene.index.RandomIndexWriter;
 import org.apache.lucene.index.Term;
+import org.apache.lucene.search.BooleanQuery.BooleanWeight;
 import org.apache.lucene.store.Directory;
 
 import org.apache.lucene.util.LuceneTestCase;
 
 public class TestBooleanScorer extends LuceneTestCase
 {
-
-  public TestBooleanScorer(String name) {
-    super(name);
-  }
-
   private static final String FIELD = "category";
   
   public void testMethod() throws Exception {
-    Random random = newRandom();
-    Directory directory = newDirectory(random);
+    Directory directory = newDirectory();
 
     String[] values = new String[] { "1", "2", "3", "4" };
 
     RandomIndexWriter writer = new RandomIndexWriter(random, directory);
     for (int i = 0; i < values.length; i++) {
       Document doc = new Document();
-      doc.add(new Field(FIELD, values[i], Field.Store.YES, Field.Index.NOT_ANALYZED));
+      doc.add(newField(FIELD, values[i], Field.Store.YES, Field.Index.NOT_ANALYZED));
       writer.addDocument(doc);
     }
     IndexReader ir = writer.getReader();
@@ -62,9 +56,10 @@ public class TestBooleanScorer extends LuceneTestCase
     query.add(booleanQuery1, BooleanClause.Occur.MUST);
     query.add(new TermQuery(new Term(FIELD, "9")), BooleanClause.Occur.MUST_NOT);
 
-    IndexSearcher indexSearcher = new IndexSearcher(ir);
+    IndexSearcher indexSearcher = newSearcher(ir);
     ScoreDoc[] hits = indexSearcher.search(query, null, 1000).scoreDocs;
     assertEquals("Number of matched documents", 2, hits.length);
+    indexSearcher.close();
     ir.close();
     directory.close();
   }
@@ -75,8 +70,14 @@ public class TestBooleanScorer extends LuceneTestCase
     // 'more' variable to work properly, and this test ensures that if the logic
     // changes, we have a test to back it up.
     
-    Similarity sim = Similarity.getDefault();
-    Scorer[] scorers = new Scorer[] {new Scorer(sim) {
+    Directory directory = newDirectory();
+    RandomIndexWriter writer = new RandomIndexWriter(random, directory);
+    writer.commit();
+    IndexReader ir = writer.getReader();
+    writer.close();
+    IndexSearcher searcher = newSearcher(ir);
+    BooleanWeight weight = (BooleanWeight) new BooleanQuery().createWeight(searcher);
+    Scorer[] scorers = new Scorer[] {new Scorer(weight) {
       private int doc = -1;
       @Override public float score() throws IOException { return 0; }
       @Override public int docID() { return doc; }
@@ -90,10 +91,15 @@ public class TestBooleanScorer extends LuceneTestCase
       }
       
     }};
-    BooleanScorer bs = new BooleanScorer(null, sim, 1, Arrays.asList(scorers), null, scorers.length);
+    
+    BooleanScorer bs = new BooleanScorer(weight, false, 1, Arrays.asList(scorers), null, scorers.length);
     
     assertEquals("should have received 3000", 3000, bs.nextDoc());
     assertEquals("should have received NO_MORE_DOCS", DocIdSetIterator.NO_MORE_DOCS, bs.nextDoc());
+    searcher.close();
+    ir.close();
+    directory.close();
+    
   }
 
 }

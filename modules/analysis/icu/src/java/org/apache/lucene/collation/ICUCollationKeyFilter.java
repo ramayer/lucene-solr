@@ -26,6 +26,8 @@ import org.apache.lucene.analysis.TokenStream;
 import org.apache.lucene.analysis.tokenattributes.CharTermAttribute;
 import org.apache.lucene.util.IndexableBinaryStringTools;
 
+import org.apache.lucene.collation.CollationKeyFilter; // javadocs
+
 import java.io.IOException;
 
 
@@ -66,7 +68,10 @@ import java.io.IOException;
  *   generation timing and key length comparisons between ICU4J and
  *   java.text.Collator over several languages.
  * </p>
+ *  @deprecated Use {@link ICUCollationAttributeFactory} instead, which encodes
+ *  terms directly as bytes. This filter will be removed in Lucene 5.0
  */
+@Deprecated
 public final class ICUCollationKeyFilter extends TokenFilter {
   private Collator collator = null;
   private RawCollationKey reusableKey = new RawCollationKey();
@@ -79,7 +84,12 @@ public final class ICUCollationKeyFilter extends TokenFilter {
    */
   public ICUCollationKeyFilter(TokenStream input, Collator collator) {
     super(input);
-    this.collator = collator;
+    // clone the collator: see http://userguide.icu-project.org/collation/architecture
+    try {
+      this.collator = (Collator) collator.clone();
+    } catch (CloneNotSupportedException e) {
+      throw new RuntimeException(e);
+    }
   }
 
   @Override

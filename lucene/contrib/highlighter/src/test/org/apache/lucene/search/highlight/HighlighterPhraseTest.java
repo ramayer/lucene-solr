@@ -18,7 +18,6 @@ package org.apache.lucene.search.highlight;
  */
 
 import java.io.IOException;
-import java.util.Random;
 
 import org.apache.lucene.analysis.MockAnalyzer;
 import org.apache.lucene.analysis.MockTokenizer;
@@ -37,6 +36,7 @@ import org.apache.lucene.index.IndexReader;
 import org.apache.lucene.index.IndexWriter;
 import org.apache.lucene.index.Term;
 import org.apache.lucene.index.TermPositionVector;
+import org.apache.lucene.index.IndexReader.AtomicReaderContext;
 import org.apache.lucene.search.Collector;
 import org.apache.lucene.search.IndexSearcher;
 import org.apache.lucene.search.PhraseQuery;
@@ -53,13 +53,12 @@ import org.apache.lucene.util.OpenBitSet;
 
 public class HighlighterPhraseTest extends LuceneTestCase {
   private static final String FIELD = "text";
-  private Random random = newRandom();
   public void testConcurrentPhrase() throws CorruptIndexException,
       LockObtainFailedException, IOException, InvalidTokenOffsetsException {
     final String TEXT = "the fox jumped";
-    final Directory directory = newDirectory(random);
+    final Directory directory = newDirectory();
     final IndexWriter indexWriter = new IndexWriter(directory,
-        newIndexWriterConfig(random, TEST_VERSION_CURRENT, new MockAnalyzer(MockTokenizer.WHITESPACE, false)));
+        newIndexWriterConfig(TEST_VERSION_CURRENT, new MockAnalyzer(random, MockTokenizer.WHITESPACE, false)));
     try {
       final Document document = new Document();
       document.add(new Field(FIELD, new TokenStreamConcurrent(),
@@ -71,7 +70,7 @@ public class HighlighterPhraseTest extends LuceneTestCase {
     final IndexReader indexReader = IndexReader.open(directory, true);
     try {
       assertEquals(1, indexReader.numDocs());
-      final IndexSearcher indexSearcher = new IndexSearcher(indexReader);
+      final IndexSearcher indexSearcher = newSearcher(indexReader);
       try {
         final PhraseQuery phraseQuery = new PhraseQuery();
         phraseQuery.add(new Term(FIELD, "fox"));
@@ -101,9 +100,9 @@ public class HighlighterPhraseTest extends LuceneTestCase {
   public void testConcurrentSpan() throws CorruptIndexException,
       LockObtainFailedException, IOException, InvalidTokenOffsetsException {
     final String TEXT = "the fox jumped";
-    final Directory directory = newDirectory(random);
+    final Directory directory = newDirectory();
     final IndexWriter indexWriter = new IndexWriter(directory,
-        newIndexWriterConfig(random, TEST_VERSION_CURRENT, new MockAnalyzer(MockTokenizer.WHITESPACE, false)));
+        newIndexWriterConfig(TEST_VERSION_CURRENT, new MockAnalyzer(random, MockTokenizer.WHITESPACE, false)));
     try {
       final Document document = new Document();
       document.add(new Field(FIELD, new TokenStreamConcurrent(),
@@ -115,7 +114,7 @@ public class HighlighterPhraseTest extends LuceneTestCase {
     final IndexReader indexReader = IndexReader.open(directory, true);
     try {
       assertEquals(1, indexReader.numDocs());
-      final IndexSearcher indexSearcher = new IndexSearcher(indexReader);
+      final IndexSearcher indexSearcher = newSearcher(indexReader);
       try {
         final Query phraseQuery = new SpanNearQuery(new SpanQuery[] {
             new SpanTermQuery(new Term(FIELD, "fox")),
@@ -135,9 +134,9 @@ public class HighlighterPhraseTest extends LuceneTestCase {
           }
 
           @Override
-          public void setNextReader(IndexReader indexreader, int i)
+          public void setNextReader(AtomicReaderContext context)
               throws IOException {
-            this.baseDoc = i;
+            this.baseDoc = context.docBase;
           }
 
           @Override
@@ -171,9 +170,9 @@ public class HighlighterPhraseTest extends LuceneTestCase {
   public void testSparsePhrase() throws CorruptIndexException,
       LockObtainFailedException, IOException, InvalidTokenOffsetsException {
     final String TEXT = "the fox did not jump";
-    final Directory directory = newDirectory(random);
+    final Directory directory = newDirectory();
     final IndexWriter indexWriter = new IndexWriter(directory,
-        newIndexWriterConfig(random, TEST_VERSION_CURRENT, new MockAnalyzer(MockTokenizer.WHITESPACE, false)));
+        newIndexWriterConfig(TEST_VERSION_CURRENT, new MockAnalyzer(random, MockTokenizer.WHITESPACE, false)));
     try {
       final Document document = new Document();
       document.add(new Field(FIELD, new TokenStreamSparse(),
@@ -185,7 +184,7 @@ public class HighlighterPhraseTest extends LuceneTestCase {
     final IndexReader indexReader = IndexReader.open(directory, true);
     try {
       assertEquals(1, indexReader.numDocs());
-      final IndexSearcher indexSearcher = new IndexSearcher(indexReader);
+      final IndexSearcher indexSearcher = newSearcher(indexReader);
       try {
         final PhraseQuery phraseQuery = new PhraseQuery();
         phraseQuery.add(new Term(FIELD, "did"));
@@ -214,9 +213,9 @@ public class HighlighterPhraseTest extends LuceneTestCase {
   public void testSparsePhraseWithNoPositions() throws CorruptIndexException,
       LockObtainFailedException, IOException, InvalidTokenOffsetsException {
     final String TEXT = "the fox did not jump";
-    final Directory directory = newDirectory(random);
+    final Directory directory = newDirectory();
     final IndexWriter indexWriter = new IndexWriter(directory,
-        newIndexWriterConfig(random, TEST_VERSION_CURRENT, new MockAnalyzer(MockTokenizer.WHITESPACE, false)));
+        newIndexWriterConfig(TEST_VERSION_CURRENT, new MockAnalyzer(random, MockTokenizer.WHITESPACE, false)));
     try {
       final Document document = new Document();
       document.add(new Field(FIELD, TEXT, Store.YES, Index.ANALYZED,
@@ -228,7 +227,7 @@ public class HighlighterPhraseTest extends LuceneTestCase {
     final IndexReader indexReader = IndexReader.open(directory, true);
     try {
       assertEquals(1, indexReader.numDocs());
-      final IndexSearcher indexSearcher = new IndexSearcher(indexReader);
+      final IndexSearcher indexSearcher = newSearcher(indexReader);
       try {
         final PhraseQuery phraseQuery = new PhraseQuery();
         phraseQuery.add(new Term(FIELD, "did"));
@@ -255,9 +254,9 @@ public class HighlighterPhraseTest extends LuceneTestCase {
   public void testSparseSpan() throws CorruptIndexException,
       LockObtainFailedException, IOException, InvalidTokenOffsetsException {
     final String TEXT = "the fox did not jump";
-    final Directory directory = newDirectory(random);
+    final Directory directory = newDirectory();
     final IndexWriter indexWriter = new IndexWriter(directory,
-        newIndexWriterConfig(random, TEST_VERSION_CURRENT, new MockAnalyzer(MockTokenizer.WHITESPACE, false)));
+        newIndexWriterConfig(TEST_VERSION_CURRENT, new MockAnalyzer(random, MockTokenizer.WHITESPACE, false)));
     try {
       final Document document = new Document();
       document.add(new Field(FIELD, new TokenStreamSparse(),
@@ -269,7 +268,7 @@ public class HighlighterPhraseTest extends LuceneTestCase {
     final IndexReader indexReader = IndexReader.open(directory, true);
     try {
       assertEquals(1, indexReader.numDocs());
-      final IndexSearcher indexSearcher = new IndexSearcher(indexReader);
+      final IndexSearcher indexSearcher = newSearcher(indexReader);
       try {
         final Query phraseQuery = new SpanNearQuery(new SpanQuery[] {
             new SpanTermQuery(new Term(FIELD, "did")),

@@ -24,10 +24,11 @@ import org.apache.lucene.document.Field;
 import org.apache.lucene.document.FieldSelector;
 import org.apache.lucene.document.FieldSelectorResult;
 import org.apache.lucene.document.Fieldable;
-import org.apache.lucene.store.Directory;
-import org.apache.lucene.store.IndexInput;
+import org.apache.lucene.document.NumericField;
 import org.apache.lucene.store.AlreadyClosedException;
 import org.apache.lucene.store.BufferedIndexInput;
+import org.apache.lucene.store.Directory;
+import org.apache.lucene.store.IndexInput;
 import org.apache.lucene.util.CloseableThreadLocal;
 
 import java.io.IOException;
@@ -37,8 +38,10 @@ import java.io.Reader;
  * Class responsible for access to stored document fields.
  * <p/>
  * It uses &lt;segment&gt;.fdt and &lt;segment&gt;.fdx; files.
+ * 
+ * @lucene.internal
  */
-final class FieldsReader implements Cloneable {
+public final class FieldsReader implements Cloneable {
   private final static int FORMAT_SIZE = 4;
 
   private final FieldInfos fieldInfos;
@@ -74,6 +77,23 @@ final class FieldsReader implements Cloneable {
     ensureOpen();
     return new FieldsReader(fieldInfos, numTotalDocs, size, format, docStoreOffset, cloneableFieldsStream, cloneableIndexStream);
   }
+
+  /** Verifies that the code version which wrote the segment is supported. */
+  public static void checkCodeVersion(Directory dir, String segment) throws IOException {
+    final String indexStreamFN = IndexFileNames.segmentFileName(segment, "", IndexFileNames.FIELDS_INDEX_EXTENSION);
+    IndexInput idxStream = dir.openInput(indexStreamFN, 1024);
+    
+    try {
+      int format = idxStream.readInt();
+      if (format < FieldsWriter.FORMAT_MINIMUM)
+        throw new IndexFormatTooOldException(indexStreamFN, format, FieldsWriter.FORMAT_MINIMUM, FieldsWriter.FORMAT_CURRENT);
+      if (format > FieldsWriter.FORMAT_CURRENT)
+        throw new IndexFormatTooNewException(indexStreamFN, format, FieldsWriter.FORMAT_MINIMUM, FieldsWriter.FORMAT_CURRENT);
+    } finally {
+      idxStream.close();
+    }
+  
+  }
   
   // Used only by clone
   private FieldsReader(FieldInfos fieldInfos, int numTotalDocs, int size, int format, int docStoreOffset,
@@ -89,11 +109,11 @@ final class FieldsReader implements Cloneable {
     indexStream = (IndexInput) cloneableIndexStream.clone();
   }
   
-  FieldsReader(Directory d, String segment, FieldInfos fn) throws IOException {
+  public FieldsReader(Directory d, String segment, FieldInfos fn) throws IOException {
     this(d, segment, fn, BufferedIndexInput.BUFFER_SIZE, -1, 0);
   }
 
-  FieldsReader(Directory d, String segment, FieldInfos fn, int readBufferSize, int docStoreOffset, int size) throws IOException {
+  public FieldsReader(Directory d, String segment, FieldInfos fn, int readBufferSize, int docStoreOffset, int size) throws IOException {
     boolean success = false;
     isOriginal = true;
     try {
@@ -157,7 +177,7 @@ final class FieldsReader implements Cloneable {
    *
    * @throws IOException
    */
-  final void close() throws IOException {
+  public final void close() throws IOException {
     if (!closed) {
       if (fieldsStream != null) {
         fieldsStream.close();
@@ -178,7 +198,7 @@ final class FieldsReader implements Cloneable {
     }
   }
 
-  final int size() {
+  public final int size() {
     return size;
   }
 
@@ -186,47 +206,46 @@ final class FieldsReader implements Cloneable {
     indexStream.seek(FORMAT_SIZE + (docID + docStoreOffset) * 8L);
   }
 
-  final Document doc(int n, FieldSelector fieldSelector) throws CorruptIndexException, IOException {
+  public final Document doc(int n, FieldSelector fieldSelector) throws CorruptIndexException, IOException {
     seekIndex(n);
     long position = indexStream.readLong();
     fieldsStream.seek(position);
 
     Document doc = new Document();
     int numFields = fieldsStream.readVInt();
-    for (int i = 0; i < numFields; i++) {
+    out: for (int i = 0; i < numFields; i++) {
       int fieldNumber = fieldsStream.readVInt();
       FieldInfo fi = fieldInfos.fieldInfo(fieldNumber);
       FieldSelectorResult acceptField = fieldSelector == null ? FieldSelectorResult.LOAD : fieldSelector.accept(fi.name);
       
-      byte bits = fieldsStream.readByte();
-      assert bits <= FieldsWriter.FIELD_IS_TOKENIZED + FieldsWriter.FIELD_IS_BINARY;
+      int bits = fieldsStream.readByte() & 0xFF;
+      assert bits <= (FieldsWriter.FIELD_IS_NUMERIC_MASK | FieldsWriter.FIELD_IS_TOKENIZED | FieldsWriter.FIELD_IS_BINARY): "bits=" + Integer.toHexString(bits);
 
       boolean tokenize = (bits & FieldsWriter.FIELD_IS_TOKENIZED) != 0;
       boolean binary = (bits & FieldsWriter.FIELD_IS_BINARY) != 0;
-      //TODO: Find an alternative approach here if this list continues to grow beyond the
-      //list of 5 or 6 currently here.  See Lucene 762 for discussion
-      if (acceptField.equals(FieldSelectorResult.LOAD)) {
-        addField(doc, fi, binary, tokenize);
-      }
-      else if (acceptField.equals(FieldSelectorResult.LOAD_AND_BREAK)){
-        addField(doc, fi, binary, tokenize);
-        break;//Get out of this loop
-      }
-      else if (acceptField.equals(FieldSelectorResult.LAZY_LOAD)) {
-        addFieldLazy(doc, fi, binary, tokenize, true);
-      }
-      else if (acceptField.equals(FieldSelectorResult.LATENT)) {
-        addFieldLazy(doc, fi, binary, tokenize, false);
-      }
-      else if (acceptField.equals(FieldSelectorResult.SIZE)){
-        skipField(addFieldSize(doc, fi, binary));
-      }
-      else if (acceptField.equals(FieldSelectorResult.SIZE_AND_BREAK)){
-        addFieldSize(doc, fi, binary);
-        break;
-      }
-      else {
-        skipField();
+      final int numeric = bits & FieldsWriter.FIELD_IS_NUMERIC_MASK;
+
+      switch (acceptField) {
+        case LOAD:
+          addField(doc, fi, binary, tokenize, numeric);
+          break;
+        case LOAD_AND_BREAK:
+          addField(doc, fi, binary, tokenize, numeric);
+          break out; //Get out of this loop
+        case LAZY_LOAD:
+          addFieldLazy(doc, fi, binary, tokenize, true, numeric);
+          break;
+        case LATENT:
+          addFieldLazy(doc, fi, binary, tokenize, false, numeric);
+          break;
+        case SIZE:
+          skipFieldBytes(addFieldSize(doc, fi, binary, numeric));
+          break;
+        case SIZE_AND_BREAK:
+          addFieldSize(doc, fi, binary, numeric);
+          break out; //Get out of this loop
+        default:
+          skipField(numeric);
       }
     }
 
@@ -237,7 +256,7 @@ final class FieldsReader implements Cloneable {
    *  contiguous range of length numDocs starting with
    *  startDocID.  Returns the IndexInput (the fieldStream),
    *  already seeked to the starting point for startDocID.*/
-  final IndexInput rawDocs(int[] lengths, int startDocID, int numDocs) throws IOException {
+  public final IndexInput rawDocs(int[] lengths, int startDocID, int numDocs) throws IOException {
     seekIndex(startDocID);
     long startOffset = indexStream.readLong();
     long lastOffset = startOffset;
@@ -263,72 +282,121 @@ final class FieldsReader implements Cloneable {
    * Skip the field.  We still have to read some of the information about the field, but can skip past the actual content.
    * This will have the most payoff on large fields.
    */
-  private void skipField() throws IOException {
-    skipField(fieldsStream.readVInt());
+  private void skipField(int numeric) throws IOException {
+    final int numBytes;
+    switch(numeric) {
+      case 0:
+        numBytes = fieldsStream.readVInt();
+        break;
+      case FieldsWriter.FIELD_IS_NUMERIC_INT:
+      case FieldsWriter.FIELD_IS_NUMERIC_FLOAT:
+        numBytes = 4;
+        break;
+      case FieldsWriter.FIELD_IS_NUMERIC_LONG:
+      case FieldsWriter.FIELD_IS_NUMERIC_DOUBLE:
+        numBytes = 8;
+        break;
+      default:
+        throw new FieldReaderException("Invalid numeric type: " + Integer.toHexString(numeric));
+    }
+    
+    skipFieldBytes(numBytes);
   }
   
-  private void skipField(int toRead) throws IOException {
+  private void skipFieldBytes(int toRead) throws IOException {
     fieldsStream.seek(fieldsStream.getFilePointer() + toRead);
   }
 
-  private void addFieldLazy(Document doc, FieldInfo fi, boolean binary, boolean tokenize, boolean cacheResult) throws IOException {
+  private NumericField loadNumericField(FieldInfo fi, int numeric) throws IOException {
+    assert numeric != 0;
+    switch(numeric) {
+      case FieldsWriter.FIELD_IS_NUMERIC_INT:
+        return new NumericField(fi.name, Field.Store.YES, fi.isIndexed).setIntValue(fieldsStream.readInt());
+      case FieldsWriter.FIELD_IS_NUMERIC_LONG:
+        return new NumericField(fi.name, Field.Store.YES, fi.isIndexed).setLongValue(fieldsStream.readLong());
+      case FieldsWriter.FIELD_IS_NUMERIC_FLOAT:
+        return new NumericField(fi.name, Field.Store.YES, fi.isIndexed).setFloatValue(Float.intBitsToFloat(fieldsStream.readInt()));
+      case FieldsWriter.FIELD_IS_NUMERIC_DOUBLE:
+        return new NumericField(fi.name, Field.Store.YES, fi.isIndexed).setDoubleValue(Double.longBitsToDouble(fieldsStream.readLong()));
+      default:
+        throw new FieldReaderException("Invalid numeric type: " + Integer.toHexString(numeric));
+    }
+  }
+
+  private void addFieldLazy(Document doc, FieldInfo fi, boolean binary, boolean tokenize, boolean cacheResult, int numeric) throws IOException {
+    final AbstractField f;
     if (binary) {
       int toRead = fieldsStream.readVInt();
       long pointer = fieldsStream.getFilePointer();
-      //was: doc.add(new Fieldable(fi.name, b, Fieldable.Store.YES));
-      doc.add(new LazyField(fi.name, Field.Store.YES, toRead, pointer, binary, cacheResult));
+      f = new LazyField(fi.name, Field.Store.YES, toRead, pointer, binary, cacheResult);
       //Need to move the pointer ahead by toRead positions
       fieldsStream.seek(pointer + toRead);
+    } else if (numeric != 0) {
+      f = loadNumericField(fi, numeric);
     } else {
       Field.Store store = Field.Store.YES;
       Field.Index index = Field.Index.toIndex(fi.isIndexed, tokenize);
       Field.TermVector termVector = Field.TermVector.toTermVector(fi.storeTermVector, fi.storeOffsetWithTermVector, fi.storePositionWithTermVector);
 
-      AbstractField f;
       int length = fieldsStream.readVInt();
       long pointer = fieldsStream.getFilePointer();
       //Skip ahead of where we are by the length of what is stored
       fieldsStream.seek(pointer+length);
       f = new LazyField(fi.name, store, index, termVector, length, pointer, binary, cacheResult);
-      f.setOmitNorms(fi.omitNorms);
-      f.setOmitTermFreqAndPositions(fi.omitTermFreqAndPositions);
-
-      doc.add(f);
     }
-
+    
+    f.setOmitNorms(fi.omitNorms);
+    f.setOmitTermFreqAndPositions(fi.omitTermFreqAndPositions);
+    doc.add(f);
   }
 
-  private void addField(Document doc, FieldInfo fi, boolean binary, boolean tokenize) throws CorruptIndexException, IOException {
+  private void addField(Document doc, FieldInfo fi, boolean binary, boolean tokenize, int numeric) throws CorruptIndexException, IOException {
+    final AbstractField f;
 
     if (binary) {
       int toRead = fieldsStream.readVInt();
       final byte[] b = new byte[toRead];
       fieldsStream.readBytes(b, 0, b.length);
-      doc.add(new Field(fi.name, b));
+      f = new Field(fi.name, b);
+    } else if (numeric != 0) {
+      f = loadNumericField(fi, numeric);
     } else {
-      Field.Store store = Field.Store.YES;
       Field.Index index = Field.Index.toIndex(fi.isIndexed, tokenize);
       Field.TermVector termVector = Field.TermVector.toTermVector(fi.storeTermVector, fi.storeOffsetWithTermVector, fi.storePositionWithTermVector);
-
-      AbstractField f;
       f = new Field(fi.name,     // name
-       false,
-              fieldsStream.readString(), // read value
-              store,
-              index,
-              termVector);
-      f.setOmitTermFreqAndPositions(fi.omitTermFreqAndPositions);
-      f.setOmitNorms(fi.omitNorms);
-
-      doc.add(f);
+        false,
+        fieldsStream.readString(), // read value
+        Field.Store.YES,
+        index,
+        termVector);
     }
+    
+    f.setOmitTermFreqAndPositions(fi.omitTermFreqAndPositions);
+    f.setOmitNorms(fi.omitNorms);
+    doc.add(f);
   }
   
   // Add the size of field as a byte[] containing the 4 bytes of the integer byte size (high order byte first; char = 2 bytes)
   // Read just the size -- caller must skip the field content to continue reading fields
   // Return the size in bytes or chars, depending on field type
-  private int addFieldSize(Document doc, FieldInfo fi, boolean binary) throws IOException {
-    int size = fieldsStream.readVInt(), bytesize = binary ? size : 2*size;
+  private int addFieldSize(Document doc, FieldInfo fi, boolean binary, int numeric) throws IOException {
+    final int bytesize, size;
+    switch(numeric) {
+      case 0:
+        size = fieldsStream.readVInt();
+        bytesize = binary ? size : 2*size;
+        break;
+      case FieldsWriter.FIELD_IS_NUMERIC_INT:
+      case FieldsWriter.FIELD_IS_NUMERIC_FLOAT:
+        size = bytesize = 4;
+        break;
+      case FieldsWriter.FIELD_IS_NUMERIC_LONG:
+      case FieldsWriter.FIELD_IS_NUMERIC_DOUBLE:
+        size = bytesize = 8;
+        break;
+      default:
+        throw new FieldReaderException("Invalid numeric type: " + Integer.toHexString(numeric));
+    }
     byte[] sizebytes = new byte[4];
     sizebytes[0] = (byte) (bytesize>>>24);
     sizebytes[1] = (byte) (bytesize>>>16);
@@ -339,7 +407,7 @@ final class FieldsReader implements Cloneable {
   }
 
   /**
-   * A Lazy implementation of Fieldable that differs loading of fields until asked for, instead of when the Document is
+   * A Lazy implementation of Fieldable that defers loading of fields until asked for, instead of when the Document is
    * loaded.
    */
   private class LazyField extends AbstractField implements Fieldable {

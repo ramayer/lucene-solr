@@ -18,14 +18,13 @@ package org.apache.lucene.search.spans;
  */
 
 import java.util.HashSet;
-import java.util.Random;
 import java.util.Set;
 
+import org.apache.lucene.analysis.MockAnalyzer;
 import org.apache.lucene.document.Document;
 import org.apache.lucene.document.Field;
 import org.apache.lucene.index.IndexReader;
 import org.apache.lucene.index.RandomIndexWriter;
-import org.apache.lucene.index.SlowMultiReaderWrapper;
 import org.apache.lucene.index.Term;
 import org.apache.lucene.search.CheckHits;
 import org.apache.lucene.search.IndexSearcher;
@@ -44,8 +43,8 @@ public class TestFieldMaskingSpanQuery extends LuceneTestCase {
     return doc;
   }
   
-  protected static Field field(String name, String value) {
-    return new Field(name, value, Field.Store.NO, Field.Index.ANALYZED);
+  protected Field field(String name, String value) {
+    return newField(name, value, Field.Store.NO, Field.Index.ANALYZED);
   }
 
   protected IndexSearcher searcher;
@@ -53,11 +52,10 @@ public class TestFieldMaskingSpanQuery extends LuceneTestCase {
   protected IndexReader reader;
   
   @Override
-  protected void setUp() throws Exception {
+  public void setUp() throws Exception {
     super.setUp();
-    Random random = newRandom();
-    directory = newDirectory(random);
-    RandomIndexWriter writer= new RandomIndexWriter(random, directory);
+    directory = newDirectory();
+    RandomIndexWriter writer= new RandomIndexWriter(random, directory, newIndexWriterConfig(TEST_VERSION_CURRENT, new MockAnalyzer(random)).setMergePolicy(newLogMergePolicy()));
     
     writer.addDocument(doc(new Field[] { field("id", "0")
                                          ,
@@ -114,11 +112,11 @@ public class TestFieldMaskingSpanQuery extends LuceneTestCase {
                                          field("last",   "jones")     }));
     reader = writer.getReader();
     writer.close();
-    searcher = new IndexSearcher(SlowMultiReaderWrapper.wrap(reader));
+    searcher = newSearcher(reader);
   }
 
   @Override
-  protected void tearDown() throws Exception {
+  public void tearDown() throws Exception {
     searcher.close();
     reader.close();
     directory.close();
@@ -126,7 +124,7 @@ public class TestFieldMaskingSpanQuery extends LuceneTestCase {
   }
 
   protected void check(SpanQuery q, int[] docs) throws Exception {
-    CheckHits.checkHitCollector(q, null, searcher, docs);
+    CheckHits.checkHitCollector(random, q, null, searcher, docs);
   }
 
   public void testRewrite0() throws Exception {
@@ -148,9 +146,8 @@ public class TestFieldMaskingSpanQuery extends LuceneTestCase {
       (new SpanTermQuery(new Term("last", "sally")) {
           @Override
           public Query rewrite(IndexReader reader) {
-            return new SpanOrQuery(new SpanQuery[] {
-              new SpanTermQuery(new Term("first", "sally")),
-              new SpanTermQuery(new Term("first", "james")) });
+            return new SpanOrQuery(new SpanTermQuery(new Term("first", "sally")),
+                new SpanTermQuery(new Term("first", "james")));
           }
         }, "first");
 
@@ -254,11 +251,10 @@ public class TestFieldMaskingSpanQuery extends LuceneTestCase {
   public void testSpans0() throws Exception {
     SpanQuery q1 = new SpanTermQuery(new Term("gender", "female"));
     SpanQuery q2 = new SpanTermQuery(new Term("first",  "james"));
-    SpanQuery q  = new SpanOrQuery(new SpanQuery[]
-      { q1, new FieldMaskingSpanQuery(q2, "gender")});
+    SpanQuery q  = new SpanOrQuery(q1, new FieldMaskingSpanQuery(q2, "gender"));
     check(q, new int[] { 0, 1, 2, 3, 4 });
   
-    Spans span = q.getSpans(searcher.getIndexReader());
+    Spans span = MultiSpansWrapper.wrap(searcher.getTopReaderContext(), q);
     
     assertEquals(true, span.next());
     assertEquals(s(0,0,1), s(span));
@@ -293,14 +289,14 @@ public class TestFieldMaskingSpanQuery extends LuceneTestCase {
   public void testSpans1() throws Exception {
     SpanQuery q1 = new SpanTermQuery(new Term("first", "sally"));
     SpanQuery q2 = new SpanTermQuery(new Term("first", "james"));
-    SpanQuery qA = new SpanOrQuery(new SpanQuery[] { q1, q2 });
+    SpanQuery qA = new SpanOrQuery(q1, q2);
     SpanQuery qB = new FieldMaskingSpanQuery(qA, "id");
                                             
     check(qA, new int[] { 0, 1, 2, 4 });
     check(qB, new int[] { 0, 1, 2, 4 });
   
-    Spans spanA = qA.getSpans(searcher.getIndexReader());
-    Spans spanB = qB.getSpans(searcher.getIndexReader());
+    Spans spanA = MultiSpansWrapper.wrap(searcher.getTopReaderContext(), qA);
+    Spans spanB = MultiSpansWrapper.wrap(searcher.getTopReaderContext(), qB);
     
     while (spanA.next()) {
       assertTrue("spanB not still going", spanB.next());
@@ -313,15 +309,14 @@ public class TestFieldMaskingSpanQuery extends LuceneTestCase {
   public void testSpans2() throws Exception {
     SpanQuery qA1 = new SpanTermQuery(new Term("gender", "female"));
     SpanQuery qA2 = new SpanTermQuery(new Term("first",  "james"));
-    SpanQuery qA  = new SpanOrQuery(new SpanQuery[]
-      { qA1, new FieldMaskingSpanQuery(qA2, "gender")});
+    SpanQuery qA  = new SpanOrQuery(qA1, new FieldMaskingSpanQuery(qA2, "gender"));
     SpanQuery qB  = new SpanTermQuery(new Term("last",   "jones"));
     SpanQuery q   = new SpanNearQuery(new SpanQuery[]
       { new FieldMaskingSpanQuery(qA, "id"),
         new FieldMaskingSpanQuery(qB, "id") }, -1, false );
     check(q, new int[] { 0, 1, 2, 3 });
   
-    Spans span = q.getSpans(searcher.getIndexReader());
+    Spans span = MultiSpansWrapper.wrap(searcher.getTopReaderContext(), q);
     
     assertEquals(true, span.next());
     assertEquals(s(0,0,1), s(span));

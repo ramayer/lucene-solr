@@ -24,8 +24,8 @@ public class StemmerUtil {
    * 
    * @param s Input Buffer
    * @param len length of input buffer
-   * @param suffix Suffix string to test
-   * @return true if <code>s</code> starts with <code>suffix</code>
+   * @param prefix Prefix string to test
+   * @return true if <code>s</code> starts with <code>prefix</code>
    */
   public static boolean startsWith(char s[], int len, String prefix) {
     final int prefixLen = prefix.length();
@@ -51,6 +51,25 @@ public class StemmerUtil {
       return false;
     for (int i = suffixLen - 1; i >= 0; i--)
       if (s[len -(suffixLen - i)] != suffix.charAt(i))
+        return false;
+    
+    return true;
+  }
+  
+  /**
+   * Returns true if the character array ends with the suffix.
+   * 
+   * @param s Input Buffer
+   * @param len length of input buffer
+   * @param suffix Suffix string to test
+   * @return true if <code>s</code> ends with <code>suffix</code>
+   */
+  public static boolean endsWith(char s[], int len, char suffix[]) {
+    final int suffixLen = suffix.length;
+    if (suffixLen > len)
+      return false;
+    for (int i = suffixLen - 1; i >= 0; i--)
+      if (s[len -(suffixLen - i)] != suffix[i])
         return false;
     
     return true;

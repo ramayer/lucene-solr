@@ -25,10 +25,6 @@ import java.util.Collection;
 import java.util.List;
 import java.util.Iterator;
 
-import org.apache.solr.client.solrj.SolrServer;
-import org.apache.solr.client.solrj.SolrServerException;
-import org.apache.solr.client.solrj.SolrRequest;
-import org.apache.solr.client.solrj.response.UpdateResponse;
 import org.apache.solr.client.solrj.util.ClientUtils;
 import org.apache.solr.common.SolrInputDocument;
 import org.apache.solr.common.params.ModifiableSolrParams;
@@ -47,6 +43,7 @@ public class UpdateRequest extends AbstractUpdateRequest {
    *
    * @deprecated Use {@link AbstractUpdateRequest.ACTION} instead
    */
+  @Deprecated
   public enum ACTION {
     COMMIT,
     OPTIMIZE
@@ -137,6 +134,7 @@ public class UpdateRequest extends AbstractUpdateRequest {
    *
    * @deprecated Use {@link org.apache.solr.client.solrj.request.AbstractUpdateRequest.ACTION} instead
    * */
+  @Deprecated
   public UpdateRequest setAction(ACTION action, boolean waitFlush, boolean waitSearcher ) {
     return setAction(action, waitFlush, waitSearcher, 1);
   }
@@ -145,6 +143,7 @@ public class UpdateRequest extends AbstractUpdateRequest {
    *
    * @deprecated Use {@link org.apache.solr.client.solrj.request.AbstractUpdateRequest.ACTION} instead
    */
+  @Deprecated
   public UpdateRequest setAction(ACTION action, boolean waitFlush, boolean waitSearcher, int maxSegments ) {
     if (params == null)
       params = new ModifiableSolrParams();
@@ -166,6 +165,7 @@ public class UpdateRequest extends AbstractUpdateRequest {
    *
    * @deprecated Use {@link org.apache.solr.client.solrj.request.AbstractUpdateRequest.ACTION} instead
    */
+  @Deprecated
   public UpdateRequest setAction(ACTION action, boolean waitFlush, boolean waitSearcher, int maxSegments , boolean expungeDeletes) {
     setAction(action, waitFlush, waitSearcher,maxSegments) ;
     params.set(UpdateParams.EXPUNGE_DELETES,""+expungeDeletes);

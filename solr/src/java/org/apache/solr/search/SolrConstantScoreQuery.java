@@ -2,6 +2,7 @@ package org.apache.solr.search;
 
 import org.apache.lucene.search.*;
 import org.apache.lucene.index.IndexReader;
+import org.apache.lucene.index.IndexReader.AtomicReaderContext;
 import org.apache.solr.search.function.ValueSource;
 import org.apache.solr.common.SolrException;
 
@@ -40,57 +41,64 @@ public class SolrConstantScoreQuery extends ConstantScoreQuery {
   }
 
   /** Returns the encapsulated filter */
+  @Override
   public Filter getFilter() {
     return filter;
   }
 
+  @Override
   public Query rewrite(IndexReader reader) throws IOException {
     return this;
   }
 
+  @Override
   public void extractTerms(Set terms) {
     // OK to not add any terms when used for MultiSearcher,
     // but may not be OK for highlighting
   }
 
   protected class ConstantWeight extends Weight {
-    private Similarity similarity;
     private float queryNorm;
     private float queryWeight;
     private Map context;
 
-    public ConstantWeight(Searcher searcher) throws IOException {
-      this.similarity = getSimilarity(searcher);
-      this.context = ValueSource.newContext();
+    public ConstantWeight(IndexSearcher searcher) throws IOException {
+      this.context = ValueSource.newContext(searcher);
       if (filter instanceof SolrFilter)
         ((SolrFilter)filter).createWeight(context, searcher);
     }
 
+    @Override
     public Query getQuery() {
       return SolrConstantScoreQuery.this;
     }
 
+    @Override
     public float getValue() {
       return queryWeight;
     }
 
+    @Override
     public float sumOfSquaredWeights() throws IOException {
       queryWeight = getBoost();
       return queryWeight * queryWeight;
     }
 
+    @Override
     public void normalize(float norm) {
       this.queryNorm = norm;
       queryWeight *= this.queryNorm;
     }
 
-    public Scorer scorer(IndexReader reader, boolean scoreDocsInOrder, boolean topScorer) throws IOException {
-      return new ConstantScorer(similarity, reader, this);
+    @Override
+    public Scorer scorer(AtomicReaderContext context, ScorerContext scorerContext) throws IOException {
+      return new ConstantScorer(context, this);
     }
 
-    public Explanation explain(IndexReader reader, int doc) throws IOException {
+    @Override
+    public Explanation explain(AtomicReaderContext context, int doc) throws IOException {
 
-      ConstantScorer cs = new ConstantScorer(similarity, reader, this);
+      ConstantScorer cs = new ConstantScorer(context, this);
       boolean exists = cs.docIdSetIterator.advance(doc) == doc;
 
       ComplexExplanation result = new ComplexExplanation();
@@ -117,10 +125,10 @@ public class SolrConstantScoreQuery extends ConstantScoreQuery {
     final float theScore;
     int doc = -1;
 
-    public ConstantScorer(Similarity similarity, IndexReader reader, ConstantWeight w) throws IOException {
-      super(similarity);
+    public ConstantScorer(AtomicReaderContext context, ConstantWeight w) throws IOException {
+      super(w);
       theScore = w.getValue();
-      DocIdSet docIdSet = filter instanceof SolrFilter ? ((SolrFilter)filter).getDocIdSet(w.context, reader) : filter.getDocIdSet(reader);
+      DocIdSet docIdSet = filter instanceof SolrFilter ? ((SolrFilter)filter).getDocIdSet(w.context, context) : filter.getDocIdSet(context);
       if (docIdSet == null) {
         docIdSetIterator = DocIdSet.EMPTY_DOCIDSET.iterator();
       } else {
@@ -133,28 +141,29 @@ public class SolrConstantScoreQuery extends ConstantScoreQuery {
       }
     }
 
+    @Override
     public int nextDoc() throws IOException {
       return docIdSetIterator.nextDoc();
     }
 
+    @Override
     public int docID() {
       return docIdSetIterator.docID();
     }
 
+    @Override
     public float score() throws IOException {
       return theScore;
     }
 
+    @Override
     public int advance(int target) throws IOException {
       return docIdSetIterator.advance(target);
     }
-
-    public Explanation explain(int doc) throws IOException {
-      throw new UnsupportedOperationException();
-    }
   }
 
-  public Weight createWeight(Searcher searcher) {
+  @Override
+  public Weight createWeight(IndexSearcher searcher) {
     try {
       return new SolrConstantScoreQuery.ConstantWeight(searcher);
     } catch (IOException e) {
@@ -164,12 +173,14 @@ public class SolrConstantScoreQuery extends ConstantScoreQuery {
   }
 
   /** Prints a user-readable version of this query. */
+  @Override
   public String toString(String field) {
     return "ConstantScore(" + filter.toString()
       + (getBoost()==1.0 ? ")" : "^" + getBoost());
   }
 
   /** Returns true if <code>o</code> is equal to this. */
+  @Override
   public boolean equals(Object o) {
     if (this == o) return true;
     if (!(o instanceof SolrConstantScoreQuery)) return false;
@@ -178,6 +189,7 @@ public class SolrConstantScoreQuery extends ConstantScoreQuery {
   }
 
   /** Returns a hash code value for this object. */
+  @Override
   public int hashCode() {
     // Simple add is OK since no existing filter hashcode has a float component.
     return filter.hashCode() + Float.floatToIntBits(getBoost());

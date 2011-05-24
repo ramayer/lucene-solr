@@ -30,6 +30,8 @@ import org.apache.lucene.analysis.core.StopFilter;
 import org.apache.lucene.analysis.util.CharArraySet;
 import org.apache.lucene.util.Version;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Simple abstract implementation that handles init arg processing, is not really
@@ -45,6 +47,8 @@ abstract class BaseTokenStreamFactory {
   /** the luceneVersion arg */
   protected Version luceneMatchVersion = null;
 
+  public static final Logger log = LoggerFactory.getLogger(BaseTokenStreamFactory.class);
+
   public void init(Map<String,String> args) {
     this.args=args;
     String matchVersion = args.get(IndexSchema.LUCENE_MATCH_VERSION_PARAM);
@@ -57,15 +61,24 @@ abstract class BaseTokenStreamFactory {
     return args;
   }
   
-  /** this method can be called in the {@link #create} method,
+  /** this method can be called in the {@link TokenizerFactory#create(java.io.Reader)} 
+   * or {@link TokenFilterFactory#create(org.apache.lucene.analysis.TokenStream)} methods,
    * to inform user, that for this factory a {@link #luceneMatchVersion} is required */
   protected final void assureMatchVersion() {
     if (luceneMatchVersion == null) {
       throw new RuntimeException("Configuration Error: Factory '" + this.getClass().getName() +
         "' needs a 'luceneMatchVersion' parameter");
+    } else if (!luceneMatchVersion.onOrAfter(Version.LUCENE_40)) {
+      log.warn(getClass().getSimpleName() + " is using deprecated " + luceneMatchVersion + 
+        " emulation. You should at some point declare and reindex to at least 4.0, because " +
+        "3.x emulation is deprecated and will be removed in 5.0");
     }
   }
 
+  protected final void warnDeprecated(String message) {
+    log.warn(getClass().getSimpleName() + " is deprecated. " + message);
+  }
+  
   // TODO: move these somewhere that tokenizers and others
   // can also use them...
   protected int getInt(String name) {

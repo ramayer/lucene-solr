@@ -34,7 +34,8 @@ import java.io.Closeable;
  * @lucene.experimental */
 public abstract class IntIndexOutput implements Closeable {
 
-  /** Write an int to the primary file */
+  /** Write an int to the primary file.  The value must be
+   * >= 0.  */
   public abstract void write(int v) throws IOException;
 
   public abstract static class Index {
@@ -46,7 +47,7 @@ public abstract class IntIndexOutput implements Closeable {
     public abstract void set(Index other) throws IOException;
 
     /** Writes "location" of current output pointer of primary
-     * output to different output (out) */
+     *  output to different output (out) */
     public abstract void write(IndexOutput indexOut, boolean absolute) throws IOException;
   }
 

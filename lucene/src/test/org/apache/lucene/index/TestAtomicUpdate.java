@@ -127,16 +127,17 @@ public class TestAtomicUpdate extends LuceneTestCase {
     TimedThread[] threads = new TimedThread[4];
 
     IndexWriterConfig conf = new IndexWriterConfig(
-        TEST_VERSION_CURRENT, new MockAnalyzer())
+        TEST_VERSION_CURRENT, new MockAnalyzer(random))
         .setMaxBufferedDocs(7);
-    ((LogMergePolicy) conf.getMergePolicy()).setMergeFactor(3);
+    ((TieredMergePolicy) conf.getMergePolicy()).setMaxMergeAtOnce(3);
     IndexWriter writer = new MockIndexWriter(directory, conf);
+    writer.setInfoStream(VERBOSE ? System.out : null);
 
     // Establish a base index of 100 docs:
     for(int i=0;i<100;i++) {
       Document d = new Document();
-      d.add(new Field("id", Integer.toString(i), Field.Store.YES, Field.Index.NOT_ANALYZED));
-      d.add(new Field("contents", English.intToEnglish(i), Field.Store.NO, Field.Index.ANALYZED));
+      d.add(newField("id", Integer.toString(i), Field.Store.YES, Field.Index.NOT_ANALYZED));
+      d.add(newField("contents", English.intToEnglish(i), Field.Store.NO, Field.Index.ANALYZED));
       if ((i-1)%7 == 0) {
         writer.commit();
       }
@@ -185,17 +186,17 @@ public class TestAtomicUpdate extends LuceneTestCase {
     FSDirectory.
   */
   public void testAtomicUpdates() throws Exception {
-    MockIndexWriter.RANDOM = newRandom();
+    MockIndexWriter.RANDOM = random;
     Directory directory;
 
     // First in a RAM directory:
-    directory = new MockDirectoryWrapper(new RAMDirectory());
+    directory = new MockDirectoryWrapper(random, new RAMDirectory());
     runTest(directory);
     directory.close();
 
     // Second in an FSDirectory:
     File dirPath = _TestUtil.getTempDir("lucene.test.atomic");
-    directory = FSDirectory.open(dirPath);
+    directory = newFSDirectory(dirPath);
     runTest(directory);
     directory.close();
     _TestUtil.rmDir(dirPath);

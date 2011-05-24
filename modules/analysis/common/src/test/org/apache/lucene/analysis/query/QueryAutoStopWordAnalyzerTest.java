@@ -22,6 +22,8 @@ import java.io.StringReader;
 
 import org.apache.lucene.analysis.Analyzer;
 import org.apache.lucene.analysis.BaseTokenStreamTestCase;
+import org.apache.lucene.analysis.MockAnalyzer;
+import org.apache.lucene.analysis.MockTokenizer;
 import org.apache.lucene.analysis.TokenStream;
 import org.apache.lucene.analysis.core.LetterTokenizer;
 import org.apache.lucene.analysis.core.WhitespaceAnalyzer;
@@ -47,10 +49,10 @@ public class QueryAutoStopWordAnalyzerTest extends BaseTokenStreamTestCase {
   QueryAutoStopWordAnalyzer protectedAnalyzer;
 
   @Override
-  protected void setUp() throws Exception {
+  public void setUp() throws Exception {
     super.setUp();
     dir = new RAMDirectory();
-    appAnalyzer = new WhitespaceAnalyzer(TEST_VERSION_CURRENT);
+    appAnalyzer = new MockAnalyzer(random, MockTokenizer.WHITESPACE, false);
     IndexWriter writer = new IndexWriter(dir, new IndexWriterConfig(TEST_VERSION_CURRENT, appAnalyzer));
     int numDocs = 200;
     for (int i = 0; i < numDocs; i++) {
@@ -67,7 +69,7 @@ public class QueryAutoStopWordAnalyzerTest extends BaseTokenStreamTestCase {
   }
 
   @Override
-  protected void tearDown() throws Exception {
+  public void tearDown() throws Exception {
     reader.close();
     super.tearDown();
   }
@@ -76,7 +78,10 @@ public class QueryAutoStopWordAnalyzerTest extends BaseTokenStreamTestCase {
   private int search(Analyzer a, String queryString) throws IOException, ParseException {
     QueryParser qp = new QueryParser(TEST_VERSION_CURRENT, "repetitiveField", a);
     Query q = qp.parse(queryString);
-    return new IndexSearcher(reader).search(q, null, 1000).totalHits;
+    IndexSearcher searcher = newSearcher(reader);
+    int hits = searcher.search(q, null, 1000).totalHits;
+    searcher.close();
+    return hits;
   }
 
   public void testUninitializedAnalyzer() throws Exception {
@@ -156,9 +161,9 @@ public class QueryAutoStopWordAnalyzerTest extends BaseTokenStreamTestCase {
     @Override
     public TokenStream tokenStream(String fieldName, Reader reader) {
       if (++invocationCount % 2 == 0)
-        return new WhitespaceTokenizer(TEST_VERSION_CURRENT, reader);
+        return new MockTokenizer(reader, MockTokenizer.WHITESPACE, false);
       else
-        return new LetterTokenizer(TEST_VERSION_CURRENT, reader);
+        return new MockTokenizer(reader, MockTokenizer.SIMPLE, false);
     }
   }
   
@@ -172,7 +177,7 @@ public class QueryAutoStopWordAnalyzerTest extends BaseTokenStreamTestCase {
   }
   
   public void testTokenStream() throws Exception {
-    QueryAutoStopWordAnalyzer a = new QueryAutoStopWordAnalyzer(TEST_VERSION_CURRENT, new WhitespaceAnalyzer(TEST_VERSION_CURRENT));
+    QueryAutoStopWordAnalyzer a = new QueryAutoStopWordAnalyzer(TEST_VERSION_CURRENT, new MockAnalyzer(random, MockTokenizer.WHITESPACE, false));
     a.addStopWords(reader, 10);
     TokenStream ts = a.tokenStream("repetitiveField", new StringReader("this boring"));
     assertTokenStreamContents(ts, new String[] { "this" });

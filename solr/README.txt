@@ -17,8 +17,8 @@
 Welcome to the Apache Solr project!
 -----------------------------------
 
-Apache Solr is a search server based on the Apache Lucene search
-library. 
+Solr is the popular, blazing fast open source enterprise search platform
+from the Apache Lucene project.
 
 For a complete description of the Solr project, team composition, source
 code repositories, and other details, please see the Solr web site at
@@ -29,12 +29,20 @@ Getting Started
 ---------------
 
 See the "example" directory for an example Solr setup.  A tutorial
-using the example setup can be found in "docs/tutorial.html" 
+using the example setup can be found at
+http://lucene.apache.org/solr/tutorial.html
+or in in "docs/tutorial.html" in a binary distribution.
 
 
 
-Files Included In Apache Solr Distributions
--------------------------------------------
+Files included in an Apache Solr binary distribution
+----------------------------------------------------
+
+example/
+  A self-contained example Solr instance, complete with a sample
+  configuration, documents to index, and the Jetty Servlet container.
+  Please see example/README.txt for information about running this
+  example.
 
 dist/apache-solr-XX.war
   The Apache Solr Application.  Deploy this WAR file to any servlet
@@ -45,44 +53,35 @@ dist/apache-solr-XX.jar
   Apache Solr Plugins (see http://wiki.apache.org/solr/SolrPlugins for
   more information).
 
-example/
-  A self-contained example Solr instance, complete with a sample
-  configuration, documents to index, and the Jetty Servlet container.
-  Please see example/README.txt for information about running this
-  example.
-
 docs/index.html
   The contents of the Apache Solr website.
   
 docs/api/index.html
   The Apache Solr Javadoc API documentation.
 
-src/
-  The Apache Solr source code.
-
 
 
 Instructions for Building Apache Solr from Source
 -------------------------------------------------
 
-1. Download the Java SE 6 JDK (Java Development Kit) or later from http://java.sun.com.
-   You will need the JDK installed, and the %JAVA_HOME%\bin directory included
-   on your command path.  To test this, issue a "java -version" command from your
-   shell and verify that the Java version is 1.6 or later.
+1. Download the Java SE 6 JDK (Java Development Kit) or later from http://java.sun.com/
+   You will need the JDK installed, and the $JAVA_HOME/bin (Windows: %JAVA_HOME%\bin) 
+   folder included on your command path. To test this, issue a "java -version" command 
+   from your shell (command prompt) and verify that the Java version is 1.6 or later.
 
-2. Download the Apache Ant binary distribution (1.7.0 or greater) from http://ant.apache.org.
-   You will need Ant installed and the %ANT_HOME%\bin directory included on your
-   command path.  To test this, issue a "ant -version" command from your
-   shell and verify that Ant is available.
+2. Download the Apache Ant binary distribution (1.7.0 or greater) from http://ant.apache.org/
+   You will need Ant installed and the $ANT_HOME/bin (Windows: %ANT_HOME%\bin) folder 
+   included on your command path. To test this, issue a "ant -version" command from your
+   shell (command prompt) and verify that Ant is available.
 
-3. Download the Apache Solr distribution, linked from the above 
-   web site.  Expand the distribution to a folder of your choice, e.g. c:\solr.   
+3. Download the Apache Solr distribution, linked from the above web site. 
+   Unzip the distribution to a folder of your choice, e.g. C:\solr or ~/solr
    Alternately, you can obtain a copy of the latest Apache Solr source code
    directly from the Subversion repository:
 
      http://lucene.apache.org/solr/version_control.html
 
-4. Navigate to that folder and issue an "ant" command to see the available options
+4. Navigate to the "solr" folder and issue an "ant" command to see the available options
    for building, testing, and packaging Solr.
   
    NOTE: 

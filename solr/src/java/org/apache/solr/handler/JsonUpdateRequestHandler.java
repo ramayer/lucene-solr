@@ -35,8 +35,9 @@ public class JsonUpdateRequestHandler extends ContentStreamHandlerBase {
     super.init(args);
   }
 
+  @Override
   protected ContentStreamLoader newLoader(SolrQueryRequest req, UpdateRequestProcessor processor) {
-    return new JsonLoader(processor);
+    return new JsonLoader(req, processor);
   }
 
   //////////////////////// SolrInfoMBeans methods //////////////////////

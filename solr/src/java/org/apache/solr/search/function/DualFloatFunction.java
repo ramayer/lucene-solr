@@ -17,8 +17,8 @@
 
 package org.apache.solr.search.function;
 
-import org.apache.lucene.index.IndexReader;
-import org.apache.lucene.search.Searcher;
+import org.apache.lucene.index.IndexReader.AtomicReaderContext;
+import org.apache.lucene.search.IndexSearcher;
 
 import java.io.IOException;
 import java.util.Map;
@@ -39,29 +39,21 @@ public abstract class DualFloatFunction extends ValueSource {
   protected abstract String name();
   protected abstract float func(int doc, DocValues aVals, DocValues bVals);
 
+  @Override
   public String description() {
     return name() + "(" + a.description() + "," + b.description() + ")";
   }
 
-  public DocValues getValues(Map context, IndexReader reader) throws IOException {
-    final DocValues aVals =  a.getValues(context, reader);
-    final DocValues bVals =  b.getValues(context, reader);
-    return new DocValues() {
+  @Override
+  public DocValues getValues(Map context, AtomicReaderContext readerContext) throws IOException {
+    final DocValues aVals =  a.getValues(context, readerContext);
+    final DocValues bVals =  b.getValues(context, readerContext);
+    return new FloatDocValues(this) {
+      @Override
       public float floatVal(int doc) {
 	return func(doc, aVals, bVals);
       }
-      public int intVal(int doc) {
-        return (int)floatVal(doc);
-      }
-      public long longVal(int doc) {
-        return (long)floatVal(doc);
-      }
-      public double doubleVal(int doc) {
-        return floatVal(doc);
-      }
-      public String strVal(int doc) {
-        return Float.toString(floatVal(doc));
-      }
+      @Override
       public String toString(int doc) {
 	return name() + '(' + aVals.toString(doc) + ',' + bVals.toString(doc) + ')';
       }
@@ -69,11 +61,12 @@ public abstract class DualFloatFunction extends ValueSource {
   }
 
   @Override
-  public void createWeight(Map context, Searcher searcher) throws IOException {
+  public void createWeight(Map context, IndexSearcher searcher) throws IOException {
     a.createWeight(context,searcher);
     b.createWeight(context,searcher);
   }
 
+  @Override
   public int hashCode() {
     int h = a.hashCode();
     h ^= (h << 13) | (h >>> 20);
@@ -83,6 +76,7 @@ public abstract class DualFloatFunction extends ValueSource {
     return h;
   }
 
+  @Override
   public boolean equals(Object o) {
     if (this.getClass() != o.getClass()) return false;
     DualFloatFunction other = (DualFloatFunction)o;

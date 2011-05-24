@@ -92,20 +92,20 @@ import org.apache.lucene.util.PriorityQueue;
  * if you want pseudo code, the simplest possible usage is as follows. The bold
  * fragment is specific to this class.
  *
- * <code><pre>
+ * <pre class="prettyprint">
  *
  * IndexReader ir = ...
  * IndexSearcher is = ...
- * <b>
+ * 
  * MoreLikeThis mlt = new MoreLikeThis(ir);
- * Reader target = ... </b><em>// orig source of doc you want to find similarities to</em><b>
+ * Reader target = ... // orig source of doc you want to find similarities to
  * Query query = mlt.like( target);
- * </b>
+ * 
  * Hits hits = is.search(query);
- * <em>// now the usual iteration thru 'hits' - the only thing to watch for is to make sure
- * you ignore the doc if it matches your 'target' document, as it should be similar to itself </em>
+ * // now the usual iteration thru 'hits' - the only thing to watch for is to make sure
+ * //you ignore the doc if it matches your 'target' document, as it should be similar to itself
  *
- * </pre></code>
+ * </pre>
  *
  * Thus you:
  * <ol>
@@ -520,7 +520,6 @@ public final class MoreLikeThis {
 	 * 
 	 * @param stopWords set of stopwords, if null it means to allow stop words
 	 *
-	 * @see org.apache.lucene.analysis.StopFilter#makeStopSet StopFilter.makeStopSet()
 	 * @see #getStopWords	 
 	 */
 	public void setStopWords(Set<?> stopWords) {
@@ -882,11 +881,11 @@ public final class MoreLikeThis {
 	    throw new UnsupportedOperationException("To use MoreLikeThis without " +
 	    		"term vectors, you must provide an Analyzer");
 	  }
-		   TokenStream ts = analyzer.tokenStream(fieldName, r);
+		   TokenStream ts = analyzer.reusableTokenStream(fieldName, r);
 			int tokenCount=0;
 			// for every token
 			CharTermAttribute termAtt = ts.addAttribute(CharTermAttribute.class);
-			
+			ts.reset();
 			while (ts.incrementToken()) {
 				String word = termAtt.toString();
 				tokenCount++;
@@ -907,6 +906,8 @@ public final class MoreLikeThis {
 					cnt.x++;
 				}
 			}
+			ts.end();
+			ts.close();
 	}
 	
 	
@@ -1007,7 +1008,7 @@ public final class MoreLikeThis {
      */
     private static class FreqQ extends PriorityQueue<Object[]> {
         FreqQ (int s) {
-            initialize(s);
+            super(s);
         }
 
         @Override

@@ -19,24 +19,26 @@ package org.apache.lucene.search;
 
 import java.io.IOException;
 import java.util.BitSet;
-import java.util.Random;
 
 import org.apache.lucene.analysis.MockAnalyzer;
 import org.apache.lucene.document.Document;
 import org.apache.lucene.document.Field;
 import org.apache.lucene.index.IndexReader;
+import org.apache.lucene.index.IndexReader.AtomicReaderContext;
 import org.apache.lucene.index.RandomIndexWriter;
 import org.apache.lucene.queryParser.QueryParser;
 import org.apache.lucene.search.TimeLimitingCollector.TimeExceededException;
 import org.apache.lucene.store.Directory;
 import org.apache.lucene.util.LuceneTestCase;
 import org.apache.lucene.util.ThreadInterruptedException;
+import org.junit.Ignore;
 
 /**
  * Tests the {@link TimeLimitingCollector}.  This test checks (1) search
  * correctness (regardless of timeout), (2) expected timeout behavior,
  * and (3) a sanity test with multiple searching threads.
  */
+@Ignore("broken: see https://issues.apache.org/jira/browse/LUCENE-2822")
 public class TestTimeLimitingCollector extends LuceneTestCase {
   private static final int SLOW_DOWN = 3;
   private static final long TIME_ALLOWED = 17 * SLOW_DOWN; // so searches can find about 17 docs.
@@ -49,22 +51,18 @@ public class TestTimeLimitingCollector extends LuceneTestCase {
   private static final int N_DOCS = 3000;
   private static final int N_THREADS = 50;
 
-  private Searcher searcher;
+  private IndexSearcher searcher;
   private Directory directory;
   private IndexReader reader;
 
   private final String FIELD_NAME = "body";
   private Query query;
 
-  public TestTimeLimitingCollector(String name) {
-    super(name);
-  }
-
   /**
    * initializes searcher with a document set
    */
   @Override
-  protected void setUp() throws Exception {
+  public void setUp() throws Exception {
     super.setUp();
     final String docText[] = {
         "docThatNeverMatchesSoWeCanRequireLastDocCollectedToBeGreaterThanZero",
@@ -76,23 +74,22 @@ public class TestTimeLimitingCollector extends LuceneTestCase {
         "blueberry strudel",
         "blueberry pizza",
     };
-    Random random = newRandom();
-    directory = newDirectory(random);
-    RandomIndexWriter iw = new RandomIndexWriter(random, directory);
+    directory = newDirectory();
+    RandomIndexWriter iw = new RandomIndexWriter(random, directory, newIndexWriterConfig(TEST_VERSION_CURRENT, new MockAnalyzer(random)).setMergePolicy(newLogMergePolicy()));
     
     for (int i=0; i<N_DOCS; i++) {
       add(docText[i%docText.length], iw);
     }
     reader = iw.getReader();
     iw.close();
-    searcher = new IndexSearcher(reader);
+    searcher = newSearcher(reader);
 
     String qtxt = "one";
     // start from 1, so that the 0th doc never matches
     for (int i = 1; i < docText.length; i++) {
       qtxt += ' ' + docText[i]; // large query so that search will be longer
     }
-    QueryParser queryParser = new QueryParser(TEST_VERSION_CURRENT, FIELD_NAME, new MockAnalyzer());
+    QueryParser queryParser = new QueryParser(TEST_VERSION_CURRENT, FIELD_NAME, new MockAnalyzer(random));
     query = queryParser.parse(qtxt);
     
     // warm the searcher
@@ -101,7 +98,7 @@ public class TestTimeLimitingCollector extends LuceneTestCase {
   }
 
   @Override
-  protected void tearDown() throws Exception {
+  public void tearDown() throws Exception {
     searcher.close();
     reader.close();
     directory.close();
@@ -110,7 +107,7 @@ public class TestTimeLimitingCollector extends LuceneTestCase {
 
   private void add(String value, RandomIndexWriter iw) throws IOException {
     Document d = new Document();
-    d.add(new Field(FIELD_NAME, value, Field.Store.NO, Field.Index.ANALYZED));
+    d.add(newField(FIELD_NAME, value, Field.Store.NO, Field.Index.ANALYZED));
     iw.addDocument(d);
   }
 
@@ -343,8 +340,8 @@ public class TestTimeLimitingCollector extends LuceneTestCase {
     }
     
     @Override
-    public void setNextReader(IndexReader reader, int base) {
-      docBase = base;
+    public void setNextReader(AtomicReaderContext context) {
+      docBase = context.docBase;
     }
     
     @Override

@@ -18,8 +18,8 @@ package org.apache.lucene.document;
  */
 
 import java.util.*;             // for javadoc
+import org.apache.lucene.search.IndexSearcher;  // for javadoc
 import org.apache.lucene.search.ScoreDoc; // for javadoc
-import org.apache.lucene.search.Searcher;  // for javadoc
 import org.apache.lucene.index.IndexReader;  // for javadoc
 
 /** Documents are the unit of indexing and search.
@@ -32,11 +32,10 @@ import org.apache.lucene.index.IndexReader;  // for javadoc
  *
  * <p>Note that fields which are <i>not</i> {@link Fieldable#isStored() stored} are
  * <i>not</i> available in documents retrieved from the index, e.g. with {@link
- * ScoreDoc#doc}, {@link Searcher#doc(int)} or {@link
- * IndexReader#document(int)}.
+ * ScoreDoc#doc} or {@link IndexReader#document(int)}.
  */
 
-public final class Document implements java.io.Serializable {
+public final class Document {
   List<Fieldable> fields = new ArrayList<Fieldable>();
   private float boost = 1.0f;
 
@@ -132,8 +131,13 @@ public final class Document implements java.io.Serializable {
   /** Returns a field with the given name if any exist in this document, or
    * null.  If multiple fields exists with this name, this method returns the
    * first value added.
-   * Do not use this method with lazy loaded fields.
+   * Do not use this method with lazy loaded fields or {@link NumericField}.
+   * @deprecated use {@link #getFieldable} instead and cast depending on
+   * data type.
+   * @throws ClassCastException if you try to retrieve a numerical or
+   * lazy loaded field.
    */
+  @Deprecated
   public final Field getField(String name) {
     return (Field) getFieldable(name);
   }
@@ -155,6 +159,8 @@ public final class Document implements java.io.Serializable {
    * this document, or null.  If multiple fields exist with this name, this
    * method returns the first value added. If only binary fields with this name
    * exist, returns null.
+   * For {@link NumericField} it returns the string value of the number. If you want
+   * the actual {@code NumericField} instance back, use {@link #getFieldable}.
    */
   public final String get(String name) {
    for (Fieldable field : fields) {
@@ -167,7 +173,7 @@ public final class Document implements java.io.Serializable {
   /** Returns a List of all the fields in a document.
    * <p>Note that fields which are <i>not</i> {@link Fieldable#isStored() stored} are
    * <i>not</i> available in documents retrieved from the
-   * index, e.g. {@link Searcher#doc(int)} or {@link
+   * index, e.g. {@link IndexSearcher#doc(int)} or {@link
    * IndexReader#document(int)}.
    */
   public final List<Fieldable> getFields() {
@@ -178,13 +184,18 @@ public final class Document implements java.io.Serializable {
   
   /**
    * Returns an array of {@link Field}s with the given name.
-   * Do not use with lazy loaded fields.
    * This method returns an empty array when there are no
    * matching fields.  It never returns null.
+   * Do not use this method with lazy loaded fields or {@link NumericField}.
    *
    * @param name the name of the field
    * @return a <code>Field[]</code> array
+   * @deprecated use {@link #getFieldable} instead and cast depending on
+   * data type.
+   * @throws ClassCastException if you try to retrieve a numerical or
+   * lazy loaded field.
    */
+   @Deprecated
    public final Field[] getFields(String name) {
      List<Field> result = new ArrayList<Field>();
      for (Fieldable field : fields) {
@@ -231,6 +242,8 @@ public final class Document implements java.io.Serializable {
    * Returns an array of values of the field specified as the method parameter.
    * This method returns an empty array when there are no
    * matching fields.  It never returns null.
+   * For {@link NumericField}s it returns the string value of the number. If you want
+   * the actual {@code NumericField} instances back, use {@link #getFieldables}.
    * @param name the name of the field
    * @return a <code>String[]</code> of field values
    */

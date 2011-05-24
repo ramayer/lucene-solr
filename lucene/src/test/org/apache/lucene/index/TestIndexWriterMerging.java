@@ -34,11 +34,10 @@ public class TestIndexWriterMerging extends LuceneTestCase
    * change the index order of documents.
    */
   public void testLucene() throws IOException {
-    Random random = newRandom();
     int num=100;
 
-    Directory indexA = newDirectory(random);
-    Directory indexB = newDirectory(random);
+    Directory indexA = newDirectory();
+    Directory indexB = newDirectory();
 
     fillIndex(random, indexA, 0, num);
     boolean fail = verifyIndex(indexA, 0);
@@ -54,17 +53,19 @@ public class TestIndexWriterMerging extends LuceneTestCase
       fail("Index b is invalid");
     }
 
-    Directory merged = newDirectory(random);
+    Directory merged = newDirectory();
 
-    IndexWriter writer = new IndexWriter(merged, newIndexWriterConfig(random, TEST_VERSION_CURRENT, new MockAnalyzer()));
-    ((LogMergePolicy) writer.getConfig().getMergePolicy()).setMergeFactor(2);
-
-    writer.addIndexes(new Directory[]{indexA, indexB});
+    IndexWriter writer = new IndexWriter(
+        merged,
+        newIndexWriterConfig(TEST_VERSION_CURRENT, new MockAnalyzer(random)).
+            setMergePolicy(newLogMergePolicy(2))
+    );
+    writer.setInfoStream(VERBOSE ? System.out : null);
+    writer.addIndexes(indexA, indexB);
     writer.optimize();
     writer.close();
 
     fail = verifyIndex(merged, 0);
-    merged.close();
 
     assertFalse("The merged index is invalid", fail);
     indexA.close();
@@ -95,16 +96,18 @@ public class TestIndexWriterMerging extends LuceneTestCase
 
   private void fillIndex(Random random, Directory dir, int start, int numDocs) throws IOException {
 
-    IndexWriter writer = new IndexWriter(dir, newIndexWriterConfig(random,
-        TEST_VERSION_CURRENT, 
-        new MockAnalyzer())
-        .setOpenMode(OpenMode.CREATE).setMaxBufferedDocs(2));
-    ((LogMergePolicy) writer.getConfig().getMergePolicy()).setMergeFactor(2);
+    IndexWriter writer = new IndexWriter(
+        dir,
+        newIndexWriterConfig(TEST_VERSION_CURRENT, new MockAnalyzer(random)).
+            setOpenMode(OpenMode.CREATE).
+            setMaxBufferedDocs(2).
+            setMergePolicy(newLogMergePolicy(2))
+    );
 
     for (int i = start; i < (start + numDocs); i++)
     {
       Document temp = new Document();
-      temp.add(new Field("count", (""+i), Field.Store.YES, Field.Index.NOT_ANALYZED));
+      temp.add(newField("count", (""+i), Field.Store.YES, Field.Index.NOT_ANALYZED));
 
       writer.addDocument(temp);
     }

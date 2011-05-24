@@ -28,28 +28,22 @@ import org.apache.lucene.store.Directory;
 import org.apache.lucene.util.English;
 
 import java.io.IOException;
-import java.util.Random;
 
 public class TestMultiThreadTermVectors extends LuceneTestCase {
   private Directory directory;
   public int numDocs = 100;
   public int numThreads = 3;
   
-  public TestMultiThreadTermVectors(String s) {
-    super(s);
-  }
-  
   @Override
-  protected void setUp() throws Exception {
+  public void setUp() throws Exception {
     super.setUp();
-    Random random = newRandom();
-    directory = newDirectory(random);
-    IndexWriter writer = new IndexWriter(directory, newIndexWriterConfig(random, TEST_VERSION_CURRENT, new MockAnalyzer()));
+    directory = newDirectory();
+    IndexWriter writer = new IndexWriter(directory, newIndexWriterConfig( TEST_VERSION_CURRENT, new MockAnalyzer(random)).setMergePolicy(newLogMergePolicy()));
     //writer.setUseCompoundFile(false);
     //writer.infoStream = System.out;
     for (int i = 0; i < numDocs; i++) {
       Document doc = new Document();
-      Fieldable fld = new Field("field", English.intToEnglish(i), Field.Store.YES, Field.Index.NOT_ANALYZED, Field.TermVector.YES);
+      Fieldable fld = newField("field", English.intToEnglish(i), Field.Store.YES, Field.Index.NOT_ANALYZED, Field.TermVector.YES);
       doc.add(fld);
       writer.addDocument(doc);
     }
@@ -58,7 +52,7 @@ public class TestMultiThreadTermVectors extends LuceneTestCase {
   }
   
   @Override
-  protected void tearDown() throws Exception {
+  public void tearDown() throws Exception {
     directory.close();
     super.tearDown();
   }

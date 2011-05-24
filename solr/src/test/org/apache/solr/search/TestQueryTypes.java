@@ -21,16 +21,20 @@ import org.apache.solr.util.AbstractSolrTestCase;
 
 public class TestQueryTypes extends AbstractSolrTestCase {
 
+  @Override
   public String getSchemaFile() { return "schema11.xml"; }
+  @Override
   public String getSolrConfigFile() { return "solrconfig.xml"; }
   public String getCoreName() { return "basic"; }
 
 
+  @Override
   public void setUp() throws Exception {
     // if you override setUp or tearDown, you better call
     // the super classes version
     super.setUp();
   }
+  @Override
   public void tearDown() throws Exception {
     // if you override setUp or tearDown, you better call
     // the super classes version
@@ -39,6 +43,7 @@ public class TestQueryTypes extends AbstractSolrTestCase {
 
 
   public void testQueryTypes() {
+    assertU(adoc("id","0"));
     assertU(adoc("id","1", "v_t","Hello Dude"));
     assertU(adoc("id","2", "v_t","Hello Yonik"));
     assertU(adoc("id","3", "v_s","{!literal}"));
@@ -83,7 +88,6 @@ public class TestQueryTypes extends AbstractSolrTestCase {
               ,"//*[@name='id'][.='999.0']"
               ,"//*[@name='" + f + "'][.='" + v + "']"
               );
-      // System.out.println("#########################################" + f + "=" + v);
 
       // field qparser
       assertQ(req( "q", "{!field f="+f+"}"+v)
@@ -94,19 +98,34 @@ public class TestQueryTypes extends AbstractSolrTestCase {
       assertQ(req( "q", f + ":[\"" + v + "\" TO \"" + v + "\"]" )
               ,"//result[@numFound='1']"
               );
+    }
 
+    // frange and function query only work on single valued field types
+    Object[] fc_vals = new Object[] {
+      "id",999.0
+      ,"v_s","wow dude"
+      ,"v_ti",-1
+      ,"v_tl",-1234567891234567890L
+      ,"v_tf",-2.0f
+      ,"v_td",-2.0
+      ,"v_tdt","2000-05-10T01:01:01Z"
+    };
+    
+    for (int i=0; i<fc_vals.length; i+=2) {
+      String f = fc_vals[i].toString();
+      String v = fc_vals[i+1].toString();
+      
       // frange qparser
       assertQ(req( "q", "{!frange v="+f+" l='"+v+"' u='"+v+"'}" )
               ,"//result[@numFound='1']"
               );
-
+      
       // function query... just make sure it doesn't throw an exception
-       assertQ(req( "q", "+id:999 _val_:\"" + f + "\"")
-            ,"//result[@numFound='1']"
-        );
-
+      if ("v_s".equals(f)) continue;  // in this context, functions must be able to be interpreted as a float
+      assertQ(req( "q", "+id:999 _val_:\"" + f + "\"")
+              ,"//result[@numFound='1']"
+              );
     }
-
 
     // Some basic tests to ensure that parsing local params is working
     assertQ("test prefix query",
@@ -118,6 +137,8 @@ public class TestQueryTypes extends AbstractSolrTestCase {
             req("q","{!raw f=v_t}hello")
             ,"//result[@numFound='2']"
             );
+
+    // no analysis is done, so these should match nothing
     assertQ("test raw query",
             req("q","{!raw f=v_t}Hello")
             ,"//result[@numFound='0']"
@@ -126,6 +147,23 @@ public class TestQueryTypes extends AbstractSolrTestCase {
             req("q","{!raw f=v_f}1.5")
             ,"//result[@numFound='0']"
             );
+
+    // test "term" qparser, which should only do readableToIndexed
+    assertQ(
+            req("q","{!term f=v_f}1.5")
+            ,"//result[@numFound='1']"
+            );
+    
+    // text fields are *not* analyzed since they may not be idempotent
+    assertQ(
+           req("q","{!term f=v_t}Hello")
+           ,"//result[@numFound='0']"
+           );
+     assertQ(
+           req("q","{!term f=v_t}hello")
+           ,"//result[@numFound='2']"
+           );
+
 
     //
     // test escapes in quoted strings
@@ -206,6 +244,14 @@ public class TestQueryTypes extends AbstractSolrTestCase {
     assertQ("test param subst",
             req("q","{!prefix f=$myf v=$my.v}"
                 ,"myf","v_t", "my.v", "hel"
+            )
+            ,"//result[@numFound='2']"
+    );
+
+    // test wacky param names
+    assertQ(
+            req("q","{!prefix f=$a/b/c v=$'a b/c'}"
+                ,"a/b/c","v_t", "a b/c", "hel"
             )
             ,"//result[@numFound='2']"
     );

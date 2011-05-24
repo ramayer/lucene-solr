@@ -93,6 +93,22 @@ public interface FacetParams {
    */
   public static final String FACET_MISSING = FACET + ".missing";
 
+
+  /**
+   * Comma separated list of fields to pivot
+   * 
+   * example: author,type  (for types by author / types within author)
+   */
+  public static final String FACET_PIVOT = FACET + ".pivot";
+
+  /**
+   * Minimum number of docs that need to match to be included in the sublist
+   * 
+   * default value is 1
+   */
+  public static final String FACET_PIVOT_MINCOUNT = FACET_PIVOT + ".mincount";
+
+  
   /**
    * String option: "count" causes facets to be sorted
    * by the count, "index" results in index order.
@@ -164,12 +180,13 @@ public interface FacetParams {
    * exclusive of their end points.
    * </p>
    * <p>
-   * The default value if none are specified is: [lower,upper,edge]
+   * The default value if none are specified is: [lower,upper,edge] <i>(NOTE: This is different then FACET_RANGE_INCLUDE)</i>
    * </p>
    * <p>
    * Can be overriden on a per field basis.
    * </p>
    * @see FacetRangeInclude
+   * @see #FACET_RANGE_INCLUDE
    */
   public static final String FACET_DATE_INCLUDE = FACET_DATE + ".include";
 
@@ -212,16 +229,8 @@ public interface FacetParams {
    * String indicating what "other" ranges should be computed for a
    * numerical range facet (multi-value).
    * Can be overriden on a per field basis.
-   * @see FacetNumberOther
    */
   public static final String FACET_RANGE_OTHER = FACET_RANGE + ".other";
-  /**
-   * String indicating whether ranges for numerical range faceting 
-   * should be exclusive or inclusive. By default both the start and
-   * end point are inclusive.
-   * Can be overriden on a per field basis.
-   * @see FacetNumberExclusive
-   */
 
   /**
    * <p>
@@ -230,7 +239,7 @@ public interface FacetParams {
    * exclusive of their end points.
    * </p>
    * <p>
-   * The default value if none are specified is: [lower,upper,edge]
+   * The default value if none are specified is: lower
    * </p>
    * <p>
    * Can be overriden on a per field basis.
@@ -254,6 +263,7 @@ public interface FacetParams {
    */
   public enum FacetRangeOther {
     BEFORE, AFTER, BETWEEN, ALL, NONE;
+    @Override
     public String toString() { return super.toString().toLowerCase(); }
     public static FacetRangeOther get(String label) {
       try {
@@ -272,6 +282,7 @@ public interface FacetParams {
   @Deprecated
   public enum FacetDateOther {
     BEFORE, AFTER, BETWEEN, ALL, NONE;
+    @Override
     public String toString() { return super.toString().toLowerCase(); }
     public static FacetDateOther get(String label) {
       try {
@@ -305,6 +316,7 @@ public interface FacetParams {
    */
   public enum FacetRangeInclude {
     ALL, LOWER, UPPER, EDGE, OUTER;
+    @Override
     public String toString() { return super.toString().toLowerCase(Locale.ENGLISH); }
     public static FacetRangeInclude get(String label) {
       try {
@@ -317,15 +329,16 @@ public interface FacetParams {
     }
     /**
      * Convinience method for parsing the param value according to the 
-     * correct semantics.
+     * correct semantics and applying the default of "LOWER"
      */
     public static EnumSet<FacetRangeInclude> parseParam(final String[] param) {
       // short circut for default behavior
       if (null == param || 0 == param.length ) 
-        return EnumSet.of(LOWER, UPPER, EDGE);
+        return EnumSet.of(LOWER);
 
       // build up set containing whatever is specified
-      final EnumSet<FacetRangeInclude> include = EnumSet.noneOf(FacetRangeInclude.class);
+      final EnumSet<FacetRangeInclude> include 
+        = EnumSet.noneOf(FacetRangeInclude.class);
       for (final String o : param) {
         include.add(FacetRangeInclude.get(o));
       }

@@ -21,7 +21,6 @@ import org.apache.lucene.document.Document;
 import org.apache.lucene.document.Field;
 import org.apache.lucene.search.FieldCache;
 import org.apache.lucene.index.IndexReader;
-import org.apache.lucene.index.IndexWriterConfig;
 import org.apache.lucene.index.MultiReader;
 import org.apache.lucene.index.IndexWriter;
 import org.apache.lucene.store.Directory;
@@ -29,7 +28,6 @@ import org.apache.lucene.util.FieldCacheSanityChecker.Insanity;
 import org.apache.lucene.util.FieldCacheSanityChecker.InsanityType;
 
 import java.io.IOException;
-import java.util.Random;
 
 public class TestFieldCacheSanityChecker extends LuceneTestCase {
 
@@ -40,14 +38,13 @@ public class TestFieldCacheSanityChecker extends LuceneTestCase {
   private static final int NUM_DOCS = 1000;
 
   @Override
-  protected void setUp() throws Exception {
+  public void setUp() throws Exception {
     super.setUp();
-    Random random = newRandom();
-    dirA = newDirectory(random);
-    dirB = newDirectory(random);
+    dirA = newDirectory();
+    dirB = newDirectory();
 
-    IndexWriter wA = new IndexWriter(dirA, newIndexWriterConfig(random, TEST_VERSION_CURRENT, new MockAnalyzer()));
-    IndexWriter wB = new IndexWriter(dirB, newIndexWriterConfig(random, TEST_VERSION_CURRENT, new MockAnalyzer()));
+    IndexWriter wA = new IndexWriter(dirA, newIndexWriterConfig(TEST_VERSION_CURRENT, new MockAnalyzer(random)));
+    IndexWriter wB = new IndexWriter(dirB, newIndexWriterConfig(TEST_VERSION_CURRENT, new MockAnalyzer(random)));
 
     long theLong = Long.MAX_VALUE;
     double theDouble = Double.MAX_VALUE;
@@ -57,12 +54,12 @@ public class TestFieldCacheSanityChecker extends LuceneTestCase {
     float theFloat = Float.MAX_VALUE;
     for (int i = 0; i < NUM_DOCS; i++){
       Document doc = new Document();
-      doc.add(new Field("theLong", String.valueOf(theLong--), Field.Store.NO, Field.Index.NOT_ANALYZED));
-      doc.add(new Field("theDouble", String.valueOf(theDouble--), Field.Store.NO, Field.Index.NOT_ANALYZED));
-      doc.add(new Field("theByte", String.valueOf(theByte--), Field.Store.NO, Field.Index.NOT_ANALYZED));
-      doc.add(new Field("theShort", String.valueOf(theShort--), Field.Store.NO, Field.Index.NOT_ANALYZED));
-      doc.add(new Field("theInt", String.valueOf(theInt--), Field.Store.NO, Field.Index.NOT_ANALYZED));
-      doc.add(new Field("theFloat", String.valueOf(theFloat--), Field.Store.NO, Field.Index.NOT_ANALYZED));
+      doc.add(newField("theLong", String.valueOf(theLong--), Field.Store.NO, Field.Index.NOT_ANALYZED));
+      doc.add(newField("theDouble", String.valueOf(theDouble--), Field.Store.NO, Field.Index.NOT_ANALYZED));
+      doc.add(newField("theByte", String.valueOf(theByte--), Field.Store.NO, Field.Index.NOT_ANALYZED));
+      doc.add(newField("theShort", String.valueOf(theShort--), Field.Store.NO, Field.Index.NOT_ANALYZED));
+      doc.add(newField("theInt", String.valueOf(theInt--), Field.Store.NO, Field.Index.NOT_ANALYZED));
+      doc.add(newField("theFloat", String.valueOf(theFloat--), Field.Store.NO, Field.Index.NOT_ANALYZED));
       if (0 == i % 3) {
         wA.addDocument(doc);
       } else {
@@ -73,11 +70,11 @@ public class TestFieldCacheSanityChecker extends LuceneTestCase {
     wB.close();
     readerA = IndexReader.open(dirA, true);
     readerB = IndexReader.open(dirB, true);
-    readerX = new MultiReader(new IndexReader[] { readerA, readerB });
+    readerX = new MultiReader(readerA, readerB);
   }
 
   @Override
-  protected void tearDown() throws Exception {
+  public void tearDown() throws Exception {
     readerA.close();
     readerB.close();
     readerX.close();

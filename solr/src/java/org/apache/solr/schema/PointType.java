@@ -29,7 +29,6 @@ import org.apache.solr.common.SolrException;
 import org.apache.solr.common.params.MapSolrParams;
 import org.apache.solr.common.params.SolrParams;
 import org.apache.solr.response.TextResponseWriter;
-import org.apache.solr.response.XMLWriter;
 import org.apache.solr.search.QParser;
 import org.apache.solr.search.SpatialOptions;
 import org.apache.solr.search.function.VectorValueSource;
@@ -41,11 +40,8 @@ import java.util.List;
 import java.util.ArrayList;
 
 /**
- * A point type that indexes a point in an n-dimensional space as separate fields and uses
- * range queries for bounding box calculations.
- * <p/>
- * <p/>
- * NOTE: There can only be one sub type
+ * A point type that indexes a point in an n-dimensional space as separate fields and supports range queries.
+ * See {@link LatLonType} for geo-spatial queries.
  */
 public class PointType extends CoordinateFieldType implements SpatialQueryable {
 
@@ -72,7 +68,8 @@ public class PointType extends CoordinateFieldType implements SpatialQueryable {
   }
 
   @Override
-  public Fieldable[] createFields(SchemaField field, String externalVal, float boost) {
+  public Fieldable[] createFields(SchemaField field, Object value, float boost) {
+    String externalVal = value.toString();
     String[] point = new String[0];
     try {
       point = DistanceUtils.parsePoint(null, externalVal, dimension);
@@ -116,13 +113,8 @@ public class PointType extends CoordinateFieldType implements SpatialQueryable {
    *
    */
   @Override
-  public Field createField(SchemaField field, String externalVal, float boost) {
+  public Fieldable createField(SchemaField field, Object value, float boost) {
     throw new UnsupportedOperationException("PointType uses multiple fields.  field=" + field.getName());
-  }
-
-  @Override
-  public void write(XMLWriter xmlWriter, String name, Fieldable f) throws IOException {
-    xmlWriter.writeStr(name, f.stringValue());
   }
 
   @Override

@@ -17,23 +17,22 @@ package org.apache.lucene.search;
  * limitations under the License.
  */
 
+import java.io.*;
+import java.util.*;
+
+import org.apache.lucene.analysis.MockAnalyzer;
 import org.apache.lucene.document.*;
 import org.apache.lucene.index.*;
-import org.apache.lucene.util.*;
+import org.apache.lucene.index.IndexReader.AtomicReaderContext;
 import org.apache.lucene.search.BooleanClause.Occur;
 import org.apache.lucene.search.Scorer.ScorerVisitor;
 import org.apache.lucene.store.*;
-
-import java.util.*;
-import java.io.*;
-
-import org.junit.Test;
+import org.apache.lucene.util.*;
 import org.junit.AfterClass;
 import org.junit.BeforeClass;
+import org.junit.Test;
 
-import static org.junit.Assert.*;
-
-public class TestSubScorerFreqs extends LuceneTestCaseJ4 {
+public class TestSubScorerFreqs extends LuceneTestCase {
 
   private static Directory dir;
   private static IndexSearcher s;
@@ -42,20 +41,20 @@ public class TestSubScorerFreqs extends LuceneTestCaseJ4 {
   public static void makeIndex() throws Exception {
     dir = new RAMDirectory();
     RandomIndexWriter w = new RandomIndexWriter(
-        newStaticRandom(TestSubScorerFreqs.class), dir);
+                                                random, dir, newIndexWriterConfig(TEST_VERSION_CURRENT, new MockAnalyzer(random)).setMergePolicy(newLogMergePolicy()));
     // make sure we have more than one segment occationally
     for (int i = 0; i < 31 * RANDOM_MULTIPLIER; i++) {
       Document doc = new Document();
-      doc.add(new Field("f", "a b c d b c d c d d", Field.Store.NO,
+      doc.add(newField("f", "a b c d b c d c d d", Field.Store.NO,
           Field.Index.ANALYZED));
       w.addDocument(doc);
 
       doc = new Document();
-      doc.add(new Field("f", "a b c d", Field.Store.NO, Field.Index.ANALYZED));
+      doc.add(newField("f", "a b c d", Field.Store.NO, Field.Index.ANALYZED));
       w.addDocument(doc);
     }
 
-    s = new IndexSearcher(w.getReader());
+    s = newSearcher(w.getReader());
     w.close();
   }
 
@@ -63,7 +62,9 @@ public class TestSubScorerFreqs extends LuceneTestCaseJ4 {
   public static void finish() throws Exception {
     s.getIndexReader().close();
     s.close();
+    s = null;
     dir.close();
+    dir = null;
   }
 
   private static class CountingCollector extends Collector {
@@ -126,10 +127,10 @@ public class TestSubScorerFreqs extends LuceneTestCaseJ4 {
     }
 
     @Override
-    public void setNextReader(IndexReader reader, int docBase)
+    public void setNextReader(AtomicReaderContext context)
         throws IOException {
-      this.docBase = docBase;
-      other.setNextReader(reader, docBase);
+      docBase = context.docBase;
+      other.setNextReader(context);
     }
 
     @Override

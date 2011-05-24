@@ -17,25 +17,30 @@ package org.apache.lucene.index;
  * limitations under the License.
  */
 
+import java.io.FileNotFoundException;
+import java.io.IOException;
+import java.io.PrintStream;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Iterator;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+
+import org.apache.lucene.index.FieldInfos.FieldNumberBiMap;
+import org.apache.lucene.index.codecs.CodecProvider;
+import org.apache.lucene.index.codecs.DefaultSegmentInfosWriter;
+import org.apache.lucene.index.codecs.SegmentInfosReader;
+import org.apache.lucene.index.codecs.SegmentInfosWriter;
 import org.apache.lucene.store.Directory;
 import org.apache.lucene.store.IndexInput;
 import org.apache.lucene.store.IndexOutput;
 import org.apache.lucene.store.NoSuchDirectoryException;
-import org.apache.lucene.index.codecs.CodecProvider;
-import org.apache.lucene.index.codecs.SegmentInfosReader;
-import org.apache.lucene.index.codecs.SegmentInfosWriter;
 import org.apache.lucene.util.ThreadInterruptedException;
-
-import java.io.FileNotFoundException;
-import java.io.IOException;
-import java.io.PrintStream;
-import java.util.Vector;
-import java.util.Arrays;
-import java.util.Collection;
-import java.util.Collections;
-import java.util.HashSet;
-import java.util.HashMap;
-import java.util.Map;
 
 /**
  * A collection of segmentInfo objects with methods for operating on
@@ -43,7 +48,7 @@ import java.util.Map;
  * 
  * @lucene.experimental
  */
-public final class SegmentInfos extends Vector<SegmentInfo> {
+public final class SegmentInfos implements Cloneable, Iterable<SegmentInfo> {
 
   /* 
    * The file format version, a negative number.
@@ -64,6 +69,11 @@ public final class SegmentInfos extends Vector<SegmentInfo> {
    * starting with the current time in milliseconds forces to create unique version numbers.
    */
   public long version = System.currentTimeMillis();
+  
+  private long globalFieldMapVersion = 0; // version of the GFNM for the next commit
+  private long lastGlobalFieldMapVersion = 0; // version of the GFNM file we last successfully read or wrote
+  private long pendingMapVersion = -1; // version of the GFNM itself that we have last successfully written
+                                       // or -1 if we it was not written. This is set during prepareCommit 
 
   private long generation = 0;     // generation of the "segments_N" for the next commit
   private long lastGeneration = 0; // generation of the "segments_N" file we last successfully read
@@ -74,11 +84,20 @@ public final class SegmentInfos extends Vector<SegmentInfo> {
   
   private CodecProvider codecs;
 
+  private int format;
+  
+  private FieldNumberBiMap globalFieldNumberMap; // this segments global field number map - lazy loaded on demand
+  
+  private List<SegmentInfo> segments = new ArrayList<SegmentInfo>();
+  private Set<SegmentInfo> segmentSet = new HashSet<SegmentInfo>();
+  private transient List<SegmentInfo> cachedUnmodifiableList;
+  private transient Set<SegmentInfo> cachedUnmodifiableSet;  
+  
   /**
    * If non-null, information about loading segments_N files
    * will be printed here.  @see #setInfoStream.
    */
-  private static PrintStream infoStream;
+  private static PrintStream infoStream = null;
   
   public SegmentInfos() {
     this(CodecProvider.getDefault());
@@ -88,8 +107,16 @@ public final class SegmentInfos extends Vector<SegmentInfo> {
     this.codecs = codecs;
   }
 
-  public final SegmentInfo info(int i) {
-    return get(i);
+  public void setFormat(int format) {
+    this.format = format;
+  }
+
+  public int getFormat() {
+    return format;
+  }
+
+  public SegmentInfo info(int i) {
+    return segments.get(i);
   }
 
   /**
@@ -161,6 +188,15 @@ public final class SegmentInfos extends Vector<SegmentInfo> {
                                                  "",
                                                  lastGeneration);
   }
+  
+  private String getGlobalFieldNumberName(long version) {
+    /*
+     * This creates a file name ${version}.fnx without a leading underscore
+     * since this file might belong to more than one segment (global map) and
+     * could otherwise easily be confused with a per-segment file.
+     */
+    return IndexFileNames.segmentFileName(""+ version, "", IndexFileNames.GLOBAL_FIELD_NUM_MAP_EXTENSION);
+  }
 
   /**
    * Parse the generation off the segments file name and
@@ -209,7 +245,7 @@ public final class SegmentInfos extends Vector<SegmentInfo> {
     boolean success = false;
 
     // Clear any previous segments:
-    clear();
+    this.clear();
 
     generation = generationFromSegmentsFileName(segmentFileName);
 
@@ -224,7 +260,7 @@ public final class SegmentInfos extends Vector<SegmentInfo> {
       if (!success) {
         // Clear any segment infos we had loaded so we
         // have a clean slate on retry:
-        clear();
+        this.clear();
       }
     }
   }
@@ -251,6 +287,8 @@ public final class SegmentInfos extends Vector<SegmentInfo> {
         return null;
       }
     }.run();
+    // either we are on 4.0 or we don't have a lastGlobalFieldMapVersion i.e. its still set to 0
+    assert DefaultSegmentInfosWriter.FORMAT_4_0 <= format || (DefaultSegmentInfosWriter.FORMAT_4_0 > format && lastGlobalFieldMapVersion == 0); 
   }
 
   // Only non-null after prepareCommit has been called and
@@ -260,15 +298,24 @@ public final class SegmentInfos extends Vector<SegmentInfo> {
   private void write(Directory directory) throws IOException {
 
     String segmentFileName = getNextSegmentFileName();
-
+    final String globalFieldMapFile;
+    if (globalFieldNumberMap != null && globalFieldNumberMap.isDirty()) {
+      globalFieldMapFile = getGlobalFieldNumberName(++globalFieldMapVersion);
+      pendingMapVersion = writeGlobalFieldMap(globalFieldNumberMap, directory, globalFieldMapFile);
+    } else {
+      globalFieldMapFile = null;
+    }
+    
+    
     // Always advance the generation on write:
     if (generation == -1) {
       generation = 1;
     } else {
       generation++;
     }
-
+    
     IndexOutput segnOutput = null;
+    
 
     boolean success = false;
 
@@ -294,8 +341,30 @@ public final class SegmentInfos extends Vector<SegmentInfo> {
         } catch (Throwable t) {
           // Suppress so we keep throwing the original exception
         }
+        if (globalFieldMapFile != null) { // delete if written here
+          try {
+            // Try not to leave global field map in
+            // the index:
+            directory.deleteFile(globalFieldMapFile);
+          } catch (Throwable t) {
+            // Suppress so we keep throwing the original exception
+          }
+        }
+        pendingMapVersion = -1;
       }
     }
+  }
+
+  /** Prunes any segment whose docs are all deleted. */
+  public void pruneDeletedSegments() {
+    for(final Iterator<SegmentInfo> it = segments.iterator(); it.hasNext();) {
+      final SegmentInfo info = it.next();
+      if (info.getDelCount() == info.docCount) {
+        it.remove();
+        segmentSet.remove(info);
+      }
+    }
+    assert segmentSet.size() == segments.size();
   }
 
   /**
@@ -305,14 +374,23 @@ public final class SegmentInfos extends Vector<SegmentInfo> {
   
   @Override
   public Object clone() {
-    SegmentInfos sis = (SegmentInfos) super.clone();
-    for(int i=0;i<sis.size();i++) {
-      final SegmentInfo info = sis.info(i);
-      assert info.getCodec() != null;
-      sis.set(i, (SegmentInfo) info.clone());
+    try {
+      final SegmentInfos sis = (SegmentInfos) super.clone();
+      // deep clone, first recreate all collections:
+      sis.segments = new ArrayList<SegmentInfo>(size());
+      sis.segmentSet = new HashSet<SegmentInfo>(size());
+      sis.cachedUnmodifiableList = null;
+      sis.cachedUnmodifiableSet = null;
+      for(final SegmentInfo info : this) {
+        assert info.getSegmentCodecs() != null;
+        // dont directly access segments, use add method!!!
+        sis.add((SegmentInfo) info.clone());
+      }
+      sis.userData = new HashMap<String,String>(userData);
+      return sis;
+    } catch (CloneNotSupportedException e) {
+      throw new RuntimeException("should not happen", e);
     }
-    sis.userData = new HashMap<String,String>(userData);
-    return sis;
   }
 
   /**
@@ -341,8 +419,8 @@ public final class SegmentInfos extends Vector<SegmentInfo> {
     // IndexWriter.prepareCommit has been called (but not
     // yet commit), then the reader will still see itself as
     // current:
-    SegmentInfos sis = new SegmentInfos();
-    sis.read(directory);
+    SegmentInfos sis = new SegmentInfos(codecs);
+    sis.read(directory, codecs);
     return sis.version;
   }
 
@@ -353,7 +431,7 @@ public final class SegmentInfos extends Vector<SegmentInfo> {
    */
   public static Map<String,String> readCurrentUserData(Directory directory, CodecProvider codecs)
     throws CorruptIndexException, IOException {
-    SegmentInfos sis = new SegmentInfos();
+    SegmentInfos sis = new SegmentInfos(codecs);
     sis.read(directory, codecs);
     return sis.getUserData();
   }
@@ -470,9 +548,9 @@ public final class SegmentInfos extends Vector<SegmentInfo> {
       long gen = 0;
       int genLookaheadCount = 0;
       IOException exc = null;
-      boolean retry = false;
+      int retryCount = 0;
 
-      int method = 0;
+      boolean useFirstMethod = true;
 
       // Loop until we succeed in calling doBody() without
       // hitting an IOException.  An IOException most likely
@@ -486,14 +564,15 @@ public final class SegmentInfos extends Vector<SegmentInfo> {
       // it.
       
       // We have three methods for determining the current
-      // generation.  We try the first two in parallel, and
-      // fall back to the third when necessary.
+      // generation.  We try the first two in parallel (when
+      // useFirstMethod is true), and fall back to the third
+      // when necessary.
 
       while(true) {
 
-        if (0 == method) {
+        if (useFirstMethod) {
 
-          // Method 1: list the directory and use the highest
+          // List the directory and use the highest
           // segments_N file.  This method works well as long
           // as there is no stale caching on the directory
           // contents (NOTE: NFS clients often have such stale
@@ -504,16 +583,17 @@ public final class SegmentInfos extends Vector<SegmentInfo> {
 
           files = directory.listAll();
           
-          if (files != null)
+          if (files != null) {
             genA = getCurrentSegmentGeneration(files);
-
+          }
+          
           if (infoStream != null) {
             message("directory listing genA=" + genA);
           }
 
-          // Method 2: open segments.gen and read its
+          // Also open segments.gen and read its
           // contents.  Then we take the larger of the two
-          // gen's.  This way, if either approach is hitting
+          // gens.  This way, if either approach is hitting
           // a stale cache (NFS) we have a better chance of
           // getting the right generation.
           long genB = -1;
@@ -573,51 +653,42 @@ public final class SegmentInfos extends Vector<SegmentInfo> {
 
           // Pick the larger of the two gen's:
           gen = Math.max(genA, genB);
-          
+
           if (gen == -1) {
             // Neither approach found a generation
             throw new IndexNotFoundException("no segments* file found in " + directory + ": files: " + Arrays.toString(files));
           }
         }
 
-        // Third method (fallback if first & second methods
-        // are not reliable): since both directory cache and
+        if (useFirstMethod && lastGen == gen && retryCount >= 2) {
+          // Give up on first method -- this is 3rd cycle on
+          // listing directory and checking gen file to
+          // attempt to locate the segments file.
+          useFirstMethod = false;
+        }
+
+        // Second method: since both directory cache and
         // file contents cache seem to be stale, just
         // advance the generation.
-        if (1 == method || (0 == method && lastGen == gen && retry)) {
-
-          method = 1;
-
+        if (!useFirstMethod) {
           if (genLookaheadCount < defaultGenLookaheadCount) {
             gen++;
             genLookaheadCount++;
             if (infoStream != null) {
               message("look ahead increment gen to " + gen);
             }
-          }
-        }
-
-        if (lastGen == gen) {
-
-          // This means we're about to try the same
-          // segments_N last tried.  This is allowed,
-          // exactly once, because writer could have been in
-          // the process of writing segments_N last time.
-
-          if (retry) {
-            // OK, we've tried the same segments_N file
-            // twice in a row, so this must be a real
-            // error.  We throw the original exception we
-            // got.
-            throw exc;
           } else {
-            retry = true;
+            // All attempts have failed -- throw first exc:
+            throw exc;
           }
-
-        } else if (0 == method) {
-          // Segment file has advanced since our last loop, so
-          // reset retry:
-          retry = false;
+        } else if (lastGen == gen) {
+          // This means we're about to try the same
+          // segments_N last tried.
+          retryCount++;
+        } else {
+          // Segment file has advanced since our last loop
+          // (we made "progress"), so reset retryCount:
+          retryCount = 0;
         }
 
         lastGen = gen;
@@ -628,7 +699,7 @@ public final class SegmentInfos extends Vector<SegmentInfo> {
 
         try {
           Object v = doBody(segmentFileName);
-          if (exc != null && infoStream != null) {
+          if (infoStream != null) {
             message("success on " + segmentFileName);
           }
           return v;
@@ -640,13 +711,13 @@ public final class SegmentInfos extends Vector<SegmentInfo> {
           }
 
           if (infoStream != null) {
-            message("primary Exception on '" + segmentFileName + "': " + err + "'; will retry: retry=" + retry + "; gen = " + gen);
+            message("primary Exception on '" + segmentFileName + "': " + err + "'; will retry: retryCount=" + retryCount + "; gen = " + gen);
           }
 
-          if (!retry && gen > 1) {
+          if (gen > 1 && useFirstMethod && retryCount == 1) {
 
-            // This is our first time trying this segments
-            // file (because retry is false), and, there is
+            // This is our second time trying this same segments
+            // file (because retryCount is 1), and, there is
             // possibly a segments_(N-1) (because gen > 1).
             // So, check if the segments_(N-1) exists and
             // try it if so:
@@ -687,23 +758,12 @@ public final class SegmentInfos extends Vector<SegmentInfo> {
     protected abstract Object doBody(String segmentFileName) throws CorruptIndexException, IOException;
   }
 
-  /**
-   * Returns a new SegmentInfos containing the SegmentInfo
-   * instances in the specified range first (inclusive) to
-   * last (exclusive), so total number of segments returned
-   * is last-first.
-   */
-  public SegmentInfos range(int first, int last) {
-    SegmentInfos infos = new SegmentInfos();
-    infos.addAll(super.subList(first, last));
-    return infos;
-  }
-
   // Carry over generation numbers from another SegmentInfos
   void updateGeneration(SegmentInfos other) {
     lastGeneration = other.lastGeneration;
     generation = other.generation;
-    version = other.version;
+    lastGlobalFieldMapVersion = other.lastGlobalFieldMapVersion;
+    globalFieldMapVersion = other.globalFieldMapVersion;
   }
 
   final void rollbackCommit(Directory dir) throws IOException {
@@ -719,7 +779,7 @@ public final class SegmentInfos extends Vector<SegmentInfo> {
       // since lastGeneration isn't incremented:
       try {
         final String segmentFileName = IndexFileNames.fileNameFromGeneration(IndexFileNames.SEGMENTS,
-                                                                             "",
+                                                                              "",
                                                                              generation);
         dir.deleteFile(segmentFileName);
       } catch (Throwable t) {
@@ -727,6 +787,16 @@ public final class SegmentInfos extends Vector<SegmentInfo> {
         // in our caller
       }
       pendingSegnOutput = null;
+      if (pendingMapVersion != -1) {
+        try {
+          final String fieldMapName = getGlobalFieldNumberName(globalFieldMapVersion--);
+          dir.deleteFile(fieldMapName);
+        } catch (Throwable t) {
+          // Suppress so we keep throwing the original exception
+          // in our caller
+        }
+        pendingMapVersion = -1;
+      }
     }
   }
 
@@ -734,11 +804,54 @@ public final class SegmentInfos extends Vector<SegmentInfo> {
    *  segments file, but writes an invalid checksum at the
    *  end, so that it is not visible to readers.  Once this
    *  is called you must call {@link #finishCommit} to complete
-   *  the commit or {@link #rollbackCommit} to abort it. */
+   *  the commit or {@link #rollbackCommit} to abort it.
+   *  <p>
+   *  Note: {@link #changed()} should be called prior to this
+   *  method if changes have been made to this {@link SegmentInfos} instance
+   *  </p>  
+   **/
   final void prepareCommit(Directory dir) throws IOException {
     if (pendingSegnOutput != null)
       throw new IllegalStateException("prepareCommit was already called");
     write(dir);
+  }
+  
+  private final long writeGlobalFieldMap(FieldNumberBiMap map, Directory dir, String name) throws IOException {
+    final IndexOutput output = dir.createOutput(name);
+    boolean success = false;
+    long version;
+    try {
+      version = map.write(output);
+      success = true;
+    } finally {
+      try {
+        output.close();
+      } catch (Throwable t) {
+        // throw orig excp
+      }
+      if (!success) {
+        try {
+          dir.deleteFile(name);
+        } catch (Throwable t) {
+          // throw orig excp
+        }
+      } else {
+        // we must sync here explicitly since during a commit
+        // IW will not sync the global field map. 
+        dir.sync(Collections.singleton(name));
+      }
+    }
+    return version;
+  }
+  
+  private void readGlobalFieldMap(FieldNumberBiMap map, Directory dir) throws IOException {
+    final String name = getGlobalFieldNumberName(lastGlobalFieldMapVersion);
+    final IndexInput input = dir.openInput(name);
+    try {
+      map.read(input);
+    } finally {
+      input.close();
+    }
   }
 
   /** Returns all file names referenced by SegmentInfo
@@ -749,7 +862,17 @@ public final class SegmentInfos extends Vector<SegmentInfo> {
   public Collection<String> files(Directory dir, boolean includeSegmentsFile) throws IOException {
     HashSet<String> files = new HashSet<String>();
     if (includeSegmentsFile) {
-      files.add(getCurrentSegmentFileName());
+      final String segmentFileName = getCurrentSegmentFileName();
+      if (segmentFileName != null) {
+        /*
+         * TODO: if lastGen == -1 we get might get null here it seems wrong to
+         * add null to the files set
+         */
+        files.add(segmentFileName);
+      }
+      if (lastGlobalFieldMapVersion > 0) {
+        files.add(getGlobalFieldNumberName(lastGlobalFieldMapVersion));
+      }
     }
     final int size = size();
     for(int i=0;i<size;i++) {
@@ -801,6 +924,17 @@ public final class SegmentInfos extends Vector<SegmentInfo> {
     }
 
     lastGeneration = generation;
+    if (pendingMapVersion != -1) {
+      /*
+       * TODO is it possible that the commit does not succeed here? if another
+       * commit happens at the same time and we lost the race between the
+       * prepareCommit and finishCommit the latest version is already
+       * incremented.
+       */
+      globalFieldNumberMap.commitLastVersion(pendingMapVersion);
+      pendingMapVersion = -1;
+      lastGlobalFieldMapVersion = globalFieldMapVersion;
+    }
 
     try {
       IndexOutput genOutput = dir.createOutput(IndexFileNames.SEGMENTS_GEN);
@@ -818,13 +952,19 @@ public final class SegmentInfos extends Vector<SegmentInfo> {
   }
 
   /** Writes & syncs to the Directory dir, taking care to
-   *  remove the segments file on exception */
+   *  remove the segments file on exception
+   *  <p>
+   *  Note: {@link #changed()} should be called prior to this
+   *  method if changes have been made to this {@link SegmentInfos} instance
+   *  </p>  
+   **/
   final void commit(Directory dir) throws IOException {
     prepareCommit(dir);
     finishCommit(dir);
   }
+  
 
-  public synchronized String toString(Directory directory) {
+  public String toString(Directory directory) {
     StringBuilder buffer = new StringBuilder();
     buffer.append(getCurrentSegmentFileName()).append(": ");
     final int count = size();
@@ -855,9 +995,10 @@ public final class SegmentInfos extends Vector<SegmentInfo> {
    *  remain write once.
    */
   void replace(SegmentInfos other) {
-    clear();
-    addAll(other);
+    rollbackSegmentInfos(other.asList());
     lastGeneration = other.lastGeneration;
+    lastGlobalFieldMapVersion = other.lastGlobalFieldMapVersion;
+    format = other.format;
   }
 
   /** Returns sum of all segment's docCounts.  Note that
@@ -869,4 +1010,186 @@ public final class SegmentInfos extends Vector<SegmentInfo> {
     }
     return count;
   }
+
+  /** Call this before committing if changes have been made to the
+   *  segments. */
+  public void changed() {
+    version++;
+  }
+  
+  /**
+   * Loads or returns the already loaded the global field number map for this {@link SegmentInfos}.
+   * If this {@link SegmentInfos} has no global field number map the returned instance is empty
+   */
+  FieldNumberBiMap getOrLoadGlobalFieldNumberMap(Directory dir) throws IOException {
+    if (globalFieldNumberMap != null) {
+      return globalFieldNumberMap;
+    }
+    final FieldNumberBiMap map  = new FieldNumberBiMap();
+    
+    if (lastGlobalFieldMapVersion > 0) {
+      // if we don't have a global map or this is a SI from a earlier version we just return the empty map;
+      readGlobalFieldMap(map, dir);
+    }
+    if (size() > 0) {
+      if (format > DefaultSegmentInfosWriter.FORMAT_4_0) {
+        assert lastGlobalFieldMapVersion == 0;
+        // build the map up if we open a pre 4.0 index
+        for (SegmentInfo info : this) {
+          final FieldInfos segFieldInfos = info.getFieldInfos();
+          for (FieldInfo fi : segFieldInfos) {
+            map.addOrGet(fi.name, fi.number);
+          }
+        }
+      }
+    }
+    return globalFieldNumberMap = map;
+  }
+
+  /**
+   * Called by {@link SegmentInfosReader} when reading the global field map version
+   */
+  public void setGlobalFieldMapVersion(long version) {
+    lastGlobalFieldMapVersion = globalFieldMapVersion = version;
+  }
+
+  public long getGlobalFieldMapVersion() {
+    return globalFieldMapVersion;
+  }
+  
+  // for testing
+  long getLastGlobalFieldMapVersion() {
+    return lastGlobalFieldMapVersion;
+  }
+  
+  /** applies all changes caused by committing a merge to this SegmentInfos */
+  void applyMergeChanges(MergePolicy.OneMerge merge, boolean dropSegment) {
+    final Set<SegmentInfo> mergedAway = new HashSet<SegmentInfo>(merge.segments);
+    boolean inserted = false;
+    int newSegIdx = 0;
+    for (int segIdx = 0, cnt = segments.size(); segIdx < cnt; segIdx++) {
+      assert segIdx >= newSegIdx;
+      final SegmentInfo info = segments.get(segIdx);
+      if (mergedAway.contains(info)) {
+        if (!inserted && !dropSegment) {
+          segments.set(segIdx, merge.info);
+          inserted = true;
+          newSegIdx++;
+        }
+      } else {
+        segments.set(newSegIdx, info);
+        newSegIdx++;
+      }
+    }
+
+    // Either we found place to insert segment, or, we did
+    // not, but only because all segments we merged became
+    // deleted while we are merging, in which case it should
+    // be the case that the new segment is also all deleted,
+    // we insert it at the beginning if it should not be dropped:
+    if (!inserted && !dropSegment) {
+      segments.add(0, merge.info);
+    }
+
+    // the rest of the segments in list are duplicates, so don't remove from map, only list!
+    segments.subList(newSegIdx, segments.size()).clear();
+    
+    // update the Set
+    if (!dropSegment) {
+      segmentSet.add(merge.info);
+    }
+    segmentSet.removeAll(mergedAway);
+    
+    assert segmentSet.size() == segments.size();
+  }
+
+  List<SegmentInfo> createBackupSegmentInfos(boolean cloneChildren) {
+    if (cloneChildren) {
+      final List<SegmentInfo> list = new ArrayList<SegmentInfo>(size());
+      for(final SegmentInfo info : this) {
+        assert info.getSegmentCodecs() != null;
+        list.add((SegmentInfo) info.clone());
+      }
+      return list;
+    } else {
+      return new ArrayList<SegmentInfo>(segments);
+    }
+  }
+  
+  void rollbackSegmentInfos(List<SegmentInfo> infos) {
+    this.clear();
+    this.addAll(infos);
+  }
+  
+  /** Returns an <b>unmodifiable</b> {@link Iterator} of contained segments in order. */
+  // @Override (comment out until Java 6)
+  public Iterator<SegmentInfo> iterator() {
+    return asList().iterator();
+  }
+  
+  /** Returns all contained segments as an <b>unmodifiable</b> {@link List} view. */
+  public List<SegmentInfo> asList() {
+    if (cachedUnmodifiableList == null) {
+      cachedUnmodifiableList = Collections.unmodifiableList(segments);
+    }
+    return cachedUnmodifiableList;
+  }
+  
+  /** Returns all contained segments as an <b>unmodifiable</b> {@link Set} view.
+   * The iterator is not sorted, use {@link List} view or {@link #iterator} to get all segments in order. */
+  public Set<SegmentInfo> asSet() {
+    if (cachedUnmodifiableSet == null) {
+      cachedUnmodifiableSet = Collections.unmodifiableSet(segmentSet);
+    }
+    return cachedUnmodifiableSet;
+  }
+  
+  public int size() {
+    return segments.size();
+  }
+
+  public void add(SegmentInfo si) {
+    if (segmentSet.contains(si)) {
+      throw new IllegalStateException("Cannot add the same segment two times to this SegmentInfos instance");
+    }
+    segments.add(si);
+    segmentSet.add(si);
+    assert segmentSet.size() == segments.size();
+  }
+  
+  public void addAll(Iterable<SegmentInfo> sis) {
+    for (final SegmentInfo si : sis) {
+      this.add(si);
+    }
+  }
+  
+  public void clear() {
+    segments.clear();
+    segmentSet.clear();
+  }
+  
+  public void remove(SegmentInfo si) {
+    final int index = this.indexOf(si);
+    if (index >= 0) {
+      this.remove(index);
+    }
+  }
+  
+  public void remove(int index) {
+    segmentSet.remove(segments.remove(index));
+    assert segmentSet.size() == segments.size();
+  }
+  
+  public boolean contains(SegmentInfo si) {
+    return segmentSet.contains(si);
+  }
+
+  public int indexOf(SegmentInfo si) {
+    if (segmentSet.contains(si)) {
+      return segments.indexOf(si);
+    } else {
+      return -1;
+    }
+  }
+
 }

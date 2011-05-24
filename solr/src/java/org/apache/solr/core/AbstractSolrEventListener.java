@@ -23,7 +23,7 @@ import org.apache.solr.search.SolrIndexSearcher;
 
 /**
  */
-class AbstractSolrEventListener implements SolrEventListener {
+public class AbstractSolrEventListener implements SolrEventListener {
   protected final SolrCore core;
   public AbstractSolrEventListener(SolrCore core) {
     this.core = core;
@@ -42,6 +42,7 @@ class AbstractSolrEventListener implements SolrEventListener {
     throw new UnsupportedOperationException();
   }
 
+  @Override
   public String toString() {
     return getClass().getName() + args;
   }

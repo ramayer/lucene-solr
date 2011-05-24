@@ -32,14 +32,20 @@ public class TestComplexExplanations extends TestExplanations {
    * nice with boosts of 0.0
    */
   @Override
-  protected void setUp() throws Exception {
+  public void setUp() throws Exception {
     super.setUp();
-    searcher.setSimilarity(createQnorm1Similarity());
+    searcher.setSimilarityProvider(createQnorm1Similarity());
+  }
+  
+  @Override
+  public void tearDown() throws Exception {
+    searcher.close();
+    super.tearDown();
   }
 
   // must be static for weight serialization tests 
-  private static DefaultSimilarity createQnorm1Similarity() {
-    return new DefaultSimilarity() {
+  private static DefaultSimilarityProvider createQnorm1Similarity() {
+    return new DefaultSimilarityProvider() {
         @Override
         public float queryNorm(float sumOfSquaredWeights) {
           return 1.0f; // / (float) Math.sqrt(1.0f + sumOfSquaredWeights);

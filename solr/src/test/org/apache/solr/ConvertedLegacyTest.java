@@ -17,8 +17,8 @@
 
 package org.apache.solr;
 
+import org.apache.solr.common.params.CommonParams;
 import org.apache.solr.request.*;
-import org.apache.solr.util.*;
 import org.junit.BeforeClass;
 import org.junit.Test;
 
@@ -43,7 +43,7 @@ public class ConvertedLegacyTest extends SolrTestCaseJ4 {
     // these may be reused by things that need a special query
     SolrQueryRequest req = null;
     Map<String,String> args = new HashMap<String,String>();
-    lrf.args.put("version","2.0");
+    lrf.args.put(CommonParams.VERSION,"2.2");
     lrf.args.put("defType","lucenePlusSort");
 
     // compact the index, keep things from getting out of hand
@@ -95,12 +95,12 @@ public class ConvertedLegacyTest extends SolrTestCaseJ4 {
     // test deletes
 
     assertU("<delete><query>id:[100 TO 110]</query></delete>");
-    assertU("<add allowDups=\"false\"><doc><field name=\"id\">101</field></doc></add>");
-    assertU("<add allowDups=\"false\"><doc><field name=\"id\">101</field></doc></add>");
-    assertU("<add allowDups=\"true\"><doc><field name=\"id\">105</field></doc></add>");
-    assertU("<add allowDups=\"false\"><doc><field name=\"id\">102</field></doc></add>");
-    assertU("<add allowDups=\"true\"><doc><field name=\"id\">103</field></doc></add>");
-    assertU("<add allowDups=\"false\"><doc><field name=\"id\">101</field></doc></add>");
+    assertU("<add overwrite=\"true\"><doc><field name=\"id\">101</field></doc></add>");
+    assertU("<add overwrite=\"true\"><doc><field name=\"id\">101</field></doc></add>");
+    assertU("<add  overwrite=\"false\"><doc><field name=\"id\">105</field></doc></add>");
+    assertU("<add overwrite=\"true\"><doc><field name=\"id\">102</field></doc></add>");
+    assertU("<add overwrite=\"false\"><doc><field name=\"id\">103</field></doc></add>");
+    assertU("<add overwrite=\"true\"><doc><field name=\"id\">101</field></doc></add>");
     assertU("<commit/>");
     assertQ(req("id:[100 TO 110]")
             ,"//*[@numFound='4']"
@@ -124,9 +124,9 @@ public class ConvertedLegacyTest extends SolrTestCaseJ4 {
     // test range
 
     assertU("<delete><id>44</id></delete>");
-    assertU("<add allowDups=\"true\"><doc><field name=\"id\">44</field><field name=\"val_s\">apple</field></doc></add>");
-    assertU("<add allowDups=\"true\"><doc><field name=\"id\">44</field><field name=\"val_s\">banana</field></doc></add>");
-    assertU("<add allowDups=\"true\"><doc><field name=\"id\">44</field><field name=\"val_s\">pear</field></doc></add>");
+    assertU("<add overwrite=\"false\"><doc><field name=\"id\">44</field><field name=\"val_s\">apple</field><field name=\"val_s1\">apple</field></doc></add>");
+    assertU("<add overwrite=\"false\"><doc><field name=\"id\">44</field><field name=\"val_s\">banana</field><field name=\"val_s1\">banana</field></doc></add>");
+    assertU("<add overwrite=\"false\"><doc><field name=\"id\">44</field><field name=\"val_s\">pear</field><field name=\"val_s1\">pear</field></doc></add>");
     assertU("<commit/>");
     assertQ(req("val_s:[a TO z]")
             ,"//*[@numFound='3'] "
@@ -134,7 +134,6 @@ public class ConvertedLegacyTest extends SolrTestCaseJ4 {
             ,"//*[@start='0']"
             );
     args = new HashMap<String,String>();
-    args.put("version","2.0");
     req = new LocalSolrQueryRequest(h.getCore(), "val_s:[a TO z]",
                                     "standard", 2, 5 , args);
     assertQ(req
@@ -144,7 +143,6 @@ public class ConvertedLegacyTest extends SolrTestCaseJ4 {
             ,"//*[@start='2']"
             );
     args = new HashMap<String,String>();
-    args.put("version","2.0");
     req = new LocalSolrQueryRequest(h.getCore(), "val_s:[a TO z]",
                                     "standard", 3, 5 , args);
     assertQ(req
@@ -152,7 +150,6 @@ public class ConvertedLegacyTest extends SolrTestCaseJ4 {
             ,"*[count(//doc)=0]"
             );
     args = new HashMap<String,String>();
-    args.put("version","2.0");
     req = new LocalSolrQueryRequest(h.getCore(), "val_s:[a TO z]",
                                     "standard", 4, 5 , args);
     assertQ(req
@@ -160,7 +157,6 @@ public class ConvertedLegacyTest extends SolrTestCaseJ4 {
             ,"*[count(//doc)=0]"
             );
     args = new HashMap<String,String>();
-    args.put("version","2.0");
     req = new LocalSolrQueryRequest(h.getCore(), "val_s:[a TO z]",
                                     "standard", 25, 5 , args);
     assertQ(req
@@ -168,7 +164,6 @@ public class ConvertedLegacyTest extends SolrTestCaseJ4 {
             ,"*[count(//doc)=0]"
             );
     args = new HashMap<String,String>();
-    args.put("version","2.0");
     req = new LocalSolrQueryRequest(h.getCore(), "val_s:[a TO z]",
                                     "standard", 0, 1 , args);
     assertQ(req
@@ -177,7 +172,6 @@ public class ConvertedLegacyTest extends SolrTestCaseJ4 {
             ,"*//doc[1]/str[.='apple']"
             );
     args = new HashMap<String,String>();
-    args.put("version","2.0");
     req = new LocalSolrQueryRequest(h.getCore(), "val_s:[a TO z]",
                                     "standard", 0, 2 , args);
     assertQ(req
@@ -186,7 +180,6 @@ public class ConvertedLegacyTest extends SolrTestCaseJ4 {
             ,"*//doc[2]/str[.='banana']"
             );
     args = new HashMap<String,String>();
-    args.put("version","2.0");
     req = new LocalSolrQueryRequest(h.getCore(), "val_s:[a TO z]",
                                     "standard", 1, 1 , args);
     assertQ(req
@@ -195,7 +188,6 @@ public class ConvertedLegacyTest extends SolrTestCaseJ4 {
             ,"*//doc[1]/str[.='banana']"
             );
     args = new HashMap<String,String>();
-    args.put("version","2.0");
     req = new LocalSolrQueryRequest(h.getCore(), "val_s:[a TO z]",
                                     "standard", 3, 1 , args);
     assertQ(req
@@ -203,7 +195,6 @@ public class ConvertedLegacyTest extends SolrTestCaseJ4 {
             ,"*[count(//doc)=0]"
             );
     args = new HashMap<String,String>();
-    args.put("version","2.0");
     req = new LocalSolrQueryRequest(h.getCore(), "val_s:[a TO z]",
                                     "standard", 4, 1 , args);
     assertQ(req
@@ -211,7 +202,6 @@ public class ConvertedLegacyTest extends SolrTestCaseJ4 {
             ,"*[count(//doc)=0]"
             );
     args = new HashMap<String,String>();
-    args.put("version","2.0");
     req = new LocalSolrQueryRequest(h.getCore(), "val_s:[a TO z]",
                                     "standard", 1, 0 , args);
     assertQ(req
@@ -219,7 +209,6 @@ public class ConvertedLegacyTest extends SolrTestCaseJ4 {
             ,"*[count(//doc)=0]"
             );
     args = new HashMap<String,String>();
-    args.put("version","2.0");
     req = new LocalSolrQueryRequest(h.getCore(), "val_s:[a TO z]",
                                     "standard", 0, 0 , args);
     assertQ(req
@@ -227,18 +216,16 @@ public class ConvertedLegacyTest extends SolrTestCaseJ4 {
             ,"*[count(//doc)=0]"
             );
     args = new HashMap<String,String>();
-    args.put("version","2.0");
     args.put("defType","lucenePlusSort");
-    req = new LocalSolrQueryRequest(h.getCore(), "val_s:[a TO z];val_s asc",
+    req = new LocalSolrQueryRequest(h.getCore(), "val_s:[a TO z];val_s1 asc",
                                     "standard", 0, 0 , args);
     assertQ(req
             ,"//*[@numFound='3'] "
             ,"*[count(//doc)=0]"
             );
     args = new HashMap<String,String>();
-    args.put("version","2.0");
     args.put("defType","lucenePlusSort");
-    req = new LocalSolrQueryRequest(h.getCore(), "val_s:[a TO z];val_s desc",
+    req = new LocalSolrQueryRequest(h.getCore(), "val_s:[a TO z];val_s1 desc",
                                     "standard", 0, 0 , args);
     assertQ(req
             ,"//*[@numFound='3'] "
@@ -318,7 +305,7 @@ public class ConvertedLegacyTest extends SolrTestCaseJ4 {
 
     // check for docs that appear more than once in a range
 
-    assertU("<add allowDups=\"true\"><doc><field name=\"id\">44</field><field name=\"val_s\">apple</field><field name=\"val_s\">banana</field></doc></add>");
+    assertU("<add overwrite=\"false\"><doc><field name=\"id\">44</field><field name=\"val_s\">apple</field><field name=\"val_s\">banana</field></doc></add>");
     assertU("<commit/>");
     assertQ(req("val_s:[* TO *] OR  val_s:[* TO *]")
             ,"//*[@numFound='4']"
@@ -333,7 +320,7 @@ public class ConvertedLegacyTest extends SolrTestCaseJ4 {
 
     // <delete><id>44</id></delete>
 
-    assertU("<add overwritePending=\"true\" overwriteCommitted=\"true\"><doc><field name=\"id\">44</field><field name=\"text\">red riding hood</field></doc></add>");
+    assertU("<add><doc><field name=\"id\">44</field><field name=\"text\">red riding hood</field></doc></add>");
     assertU("<commit/>");
     assertQ(req("id:44 AND red")
             ,"//@numFound[.='1'] "
@@ -349,8 +336,8 @@ public class ConvertedLegacyTest extends SolrTestCaseJ4 {
     // allow duplicates
 
     assertU("<delete><id>44</id></delete>");
-    assertU("<add allowDups=\"true\" overwriteCommitted=\"false\" overwritePending=\"false\"><doc><field name=\"id\">44</field><field name=\"text\">red riding hood</field></doc></add>");
-    assertU("<add allowDups=\"true\" overwriteCommitted=\"false\" overwritePending=\"false\"><doc><field name=\"id\">44</field><field name=\"text\">big bad wolf</field></doc></add>");
+    assertU("<add overwrite=\"false\"><doc><field name=\"id\">44</field><field name=\"text\">red riding hood</field></doc></add>");
+    assertU("<add overwrite=\"false\"><doc><field name=\"id\">44</field><field name=\"text\">big bad wolf</field></doc></add>");
     assertU("<commit/>");
     assertQ(req("id:44")
             ,"//@numFound[.='2']"
@@ -481,13 +468,13 @@ public class ConvertedLegacyTest extends SolrTestCaseJ4 {
 
     assertQ(req("id:44")
             ,"*[count(//doc/*)>=3]  "
-            ,"//int[@name='gack_i'][.='51778']  "
-            ,"//str[@name='t_name'][.='cats']"
+            ,"//arr[@name='gack_i']/int[.='51778']  "
+            ,"//arr[@name='t_name']/str[.='cats']"
             );
     // now test if we can query by a dynamic field (requires analyzer support)
 
     assertQ(req("t_name:cat")
-            ,"//str[@name='t_name' and .='cats']"
+            ,"//arr[@name='t_name' and .='cats']/str"
             );
     // check that deleteByQuery works for dynamic fields
 
@@ -502,141 +489,141 @@ public class ConvertedLegacyTest extends SolrTestCaseJ4 {
     assertU("<add><doc><field name=\"id\">44</field><field name=\"xaa\">mystr</field><field name=\"xaaa\">12321</field></doc></add>");
     assertU("<commit/>");
     assertQ(req("id:44")
-            ,"//str[@name='xaa'][.='mystr']  "
-            ,"//int[@name='xaaa'][.='12321']"
+            ,"//arr[@name='xaa'][.='mystr']/str  "
+            ,"//arr[@name='xaaa'][.='12321']/int"
             );
 
 
     // test integer ranges and sorting
 
     assertU("<delete><id>44</id></delete>");
-    assertU("<add allowDups=\"true\"><doc><field name=\"id\">44</field><field name=\"num_i\">1234567890</field></doc></add>");
-    assertU("<add allowDups=\"true\"><doc><field name=\"id\">44</field><field name=\"num_i\">10</field></doc></add>");
-    assertU("<add allowDups=\"true\"><doc><field name=\"id\">44</field><field name=\"num_i\">1</field></doc></add>");
-    assertU("<add allowDups=\"true\"><doc><field name=\"id\">44</field><field name=\"num_i\">2</field></doc></add>");
-    assertU("<add allowDups=\"true\"><doc><field name=\"id\">44</field><field name=\"num_i\">15</field></doc></add>");
-    assertU("<add allowDups=\"true\"><doc><field name=\"id\">44</field><field name=\"num_i\">-1</field></doc></add>");
-    assertU("<add allowDups=\"true\"><doc><field name=\"id\">44</field><field name=\"num_i\">-987654321</field></doc></add>");
-    assertU("<add allowDups=\"true\"><doc><field name=\"id\">44</field><field name=\"num_i\">2147483647</field></doc></add>");
-    assertU("<add allowDups=\"true\"><doc><field name=\"id\">44</field><field name=\"num_i\">-2147483648</field></doc></add>");
-    assertU("<add allowDups=\"true\"><doc><field name=\"id\">44</field><field name=\"num_i\">0</field></doc></add>");
+    assertU("<add overwrite=\"false\"><doc><field name=\"id\">44</field><field name=\"num_i1\">1234567890</field></doc></add>");
+    assertU("<add overwrite=\"false\"><doc><field name=\"id\">44</field><field name=\"num_i1\">10</field></doc></add>");
+    assertU("<add overwrite=\"false\"><doc><field name=\"id\">44</field><field name=\"num_i1\">1</field></doc></add>");
+    assertU("<add overwrite=\"false\"><doc><field name=\"id\">44</field><field name=\"num_i1\">2</field></doc></add>");
+    assertU("<add overwrite=\"false\"><doc><field name=\"id\">44</field><field name=\"num_i1\">15</field></doc></add>");
+    assertU("<add overwrite=\"false\"><doc><field name=\"id\">44</field><field name=\"num_i1\">-1</field></doc></add>");
+    assertU("<add overwrite=\"false\"><doc><field name=\"id\">44</field><field name=\"num_i1\">-987654321</field></doc></add>");
+    assertU("<add overwrite=\"false\"><doc><field name=\"id\">44</field><field name=\"num_i1\">2147483647</field></doc></add>");
+    assertU("<add overwrite=\"false\"><doc><field name=\"id\">44</field><field name=\"num_i1\">-2147483648</field></doc></add>");
+    assertU("<add overwrite=\"false\"><doc><field name=\"id\">44</field><field name=\"num_i1\">0</field></doc></add>");
     assertU("<commit/>");
     assertQ(req("id:44")
             ,"*[count(//doc)=10]"
             );
-    assertQ(req("num_i:2147483647")
+    assertQ(req("num_i1:2147483647")
             ,"//@numFound[.='1']  "
             ,"//int[.='2147483647']"
             );
-    assertQ(req("num_i:\"-2147483648\"")
+    assertQ(req("num_i1:\"-2147483648\"")
             ,"//@numFound[.='1'] "
             ,"//int[.='-2147483648']"
             );
-    assertQ(req("id:44;num_i asc;")
+    assertQ(req("id:44;num_i1 asc;")
             ,"//doc[1]/int[.='-2147483648'] "
             ,"//doc[last()]/int[.='2147483647']"
             );
-    assertQ(req("id:44;num_i desc;")
+    assertQ(req("id:44;num_i1 desc;")
             ,"//doc[1]/int[.='2147483647'] "
             ,"//doc[last()]/int[.='-2147483648']"
             );
-    assertQ(req("num_i:[0 TO 9]")
+    assertQ(req("num_i1:[0 TO 9]")
             ,"*[count(//doc)=3]"
             );
-    assertQ(req("num_i:[-2147483648 TO 2147483647]")
+    assertQ(req("num_i1:[-2147483648 TO 2147483647]")
             ,"*[count(//doc)=10]"
             );
-    assertQ(req("num_i:[-10 TO -1]")
+    assertQ(req("num_i1:[-10 TO -1]")
             ,"*[count(//doc)=1]"
             );
 
     // test long ranges and sorting
 
     assertU("<delete><id>44</id></delete>");
-    assertU("<add allowDups=\"true\"><doc><field name=\"id\">44</field><field name=\"num_l\">1234567890</field></doc></add>");
-    assertU("<add allowDups=\"true\"><doc><field name=\"id\">44</field><field name=\"num_l\">10</field></doc></add>");
-    assertU("<add allowDups=\"true\"><doc><field name=\"id\">44</field><field name=\"num_l\">1</field></doc></add>");
-    assertU("<add allowDups=\"true\"><doc><field name=\"id\">44</field><field name=\"num_l\">2</field></doc></add>");
-    assertU("<add allowDups=\"true\"><doc><field name=\"id\">44</field><field name=\"num_l\">15</field></doc></add>");
-    assertU("<add allowDups=\"true\"><doc><field name=\"id\">44</field><field name=\"num_l\">-1</field></doc></add>");
-    assertU("<add allowDups=\"true\"><doc><field name=\"id\">44</field><field name=\"num_l\">-987654321</field></doc></add>");
-    assertU("<add allowDups=\"true\"><doc><field name=\"id\">44</field><field name=\"num_l\">9223372036854775807</field></doc></add>");
-    assertU("<add allowDups=\"true\"><doc><field name=\"id\">44</field><field name=\"num_l\">-9223372036854775808</field></doc></add>");
-    assertU("<add allowDups=\"true\"><doc><field name=\"id\">44</field><field name=\"num_l\">0</field></doc></add>");
+    assertU("<add overwrite=\"false\"><doc><field name=\"id\">44</field><field name=\"num_l1\">1234567890</field></doc></add>");
+    assertU("<add overwrite=\"false\"><doc><field name=\"id\">44</field><field name=\"num_l1\">10</field></doc></add>");
+    assertU("<add overwrite=\"false\"><doc><field name=\"id\">44</field><field name=\"num_l1\">1</field></doc></add>");
+    assertU("<add overwrite=\"false\"><doc><field name=\"id\">44</field><field name=\"num_l1\">2</field></doc></add>");
+    assertU("<add overwrite=\"false\"><doc><field name=\"id\">44</field><field name=\"num_l1\">15</field></doc></add>");
+    assertU("<add overwrite=\"false\"><doc><field name=\"id\">44</field><field name=\"num_l1\">-1</field></doc></add>");
+    assertU("<add overwrite=\"false\"><doc><field name=\"id\">44</field><field name=\"num_l1\">-987654321</field></doc></add>");
+    assertU("<add overwrite=\"false\"><doc><field name=\"id\">44</field><field name=\"num_l1\">9223372036854775807</field></doc></add>");
+    assertU("<add overwrite=\"false\"><doc><field name=\"id\">44</field><field name=\"num_l1\">-9223372036854775808</field></doc></add>");
+    assertU("<add overwrite=\"false\"><doc><field name=\"id\">44</field><field name=\"num_l1\">0</field></doc></add>");
     assertU("<commit/>");
     assertQ(req("id:44")
             ,"*[count(//doc)=10]"
             );
-    assertQ(req("num_l:9223372036854775807")
+    assertQ(req("num_l1:9223372036854775807")
             ,"//@numFound[.='1'] "
             ,"//long[.='9223372036854775807']"
             );
-    assertQ(req("num_l:\"-9223372036854775808\"")
+    assertQ(req("num_l1:\"-9223372036854775808\"")
             ,"//@numFound[.='1'] "
             ,"//long[.='-9223372036854775808']"
             );
-    assertQ(req("id:44;num_l asc;")
+    assertQ(req("id:44;num_l1 asc;")
             ,"//doc[1]/long[.='-9223372036854775808'] "
             ,"//doc[last()]/long[.='9223372036854775807']"
             );
-    assertQ(req("id:44;num_l desc;")
+    assertQ(req("id:44;num_l1 desc;")
             ,"//doc[1]/long[.='9223372036854775807'] "
             ,"//doc[last()]/long[.='-9223372036854775808']"
             );
-    assertQ(req("num_l:[-1 TO 9]")
+    assertQ(req("num_l1:[-1 TO 9]")
             ,"*[count(//doc)=4]"
             );
-    assertQ(req("num_l:[-9223372036854775808 TO 9223372036854775807]")
+    assertQ(req("num_l1:[-9223372036854775808 TO 9223372036854775807]")
             ,"*[count(//doc)=10]"
             );
-    assertQ(req("num_l:[-10 TO -1]")
+    assertQ(req("num_l1:[-10 TO -1]")
             ,"*[count(//doc)=1]"
             );
 
     // test binary float ranges and sorting
 
     assertU("<delete><id>44</id></delete>");
-    assertU("<add allowDups=\"true\"><doc><field name=\"id\">44</field><field name=\"num_sf\">1.4142135</field></doc></add>");
-    assertU("<add allowDups=\"true\"><doc><field name=\"id\">44</field><field name=\"num_sf\">Infinity</field></doc></add>");
-    assertU("<add allowDups=\"true\"><doc><field name=\"id\">44</field><field name=\"num_sf\">-Infinity</field></doc></add>");
-    assertU("<add allowDups=\"true\"><doc><field name=\"id\">44</field><field name=\"num_sf\">NaN</field></doc></add>");
-    assertU("<add allowDups=\"true\"><doc><field name=\"id\">44</field><field name=\"num_sf\">2</field></doc></add>");
-    assertU("<add allowDups=\"true\"><doc><field name=\"id\">44</field><field name=\"num_sf\">-1</field></doc></add>");
-    assertU("<add allowDups=\"true\"><doc><field name=\"id\">44</field><field name=\"num_sf\">-987654321</field></doc></add>");
-    assertU("<add allowDups=\"true\"><doc><field name=\"id\">44</field><field name=\"num_sf\">-999999.99</field></doc></add>");
-    assertU("<add allowDups=\"true\"><doc><field name=\"id\">44</field><field name=\"num_sf\">-1e20</field></doc></add>");
-    assertU("<add allowDups=\"true\"><doc><field name=\"id\">44</field><field name=\"num_sf\">0</field></doc></add>");
+    assertU("<add overwrite=\"false\"><doc><field name=\"id\">44</field><field name=\"num_sf1\">1.4142135</field></doc></add>");
+    assertU("<add overwrite=\"false\"><doc><field name=\"id\">44</field><field name=\"num_sf1\">Infinity</field></doc></add>");
+    assertU("<add overwrite=\"false\"><doc><field name=\"id\">44</field><field name=\"num_sf1\">-Infinity</field></doc></add>");
+    assertU("<add overwrite=\"false\"><doc><field name=\"id\">44</field><field name=\"num_sf1\">NaN</field></doc></add>");
+    assertU("<add overwrite=\"false\"><doc><field name=\"id\">44</field><field name=\"num_sf1\">2</field></doc></add>");
+    assertU("<add overwrite=\"false\"><doc><field name=\"id\">44</field><field name=\"num_sf1\">-1</field></doc></add>");
+    assertU("<add overwrite=\"false\"><doc><field name=\"id\">44</field><field name=\"num_sf1\">-987654321</field></doc></add>");
+    assertU("<add overwrite=\"false\"><doc><field name=\"id\">44</field><field name=\"num_sf1\">-999999.99</field></doc></add>");
+    assertU("<add overwrite=\"false\"><doc><field name=\"id\">44</field><field name=\"num_sf1\">-1e20</field></doc></add>");
+    assertU("<add overwrite=\"false\"><doc><field name=\"id\">44</field><field name=\"num_sf1\">0</field></doc></add>");
     assertU("<commit/>");
     assertQ(req("id:44")
             ,"*[count(//doc)=10]"
             );
-    assertQ(req("num_sf:Infinity")
+    assertQ(req("num_sf1:Infinity")
             ,"//@numFound[.='1']  "
             ,"//float[.='Infinity']"
             );
-    assertQ(req("num_sf:\"-Infinity\"")
+    assertQ(req("num_sf1:\"-Infinity\"")
             ,"//@numFound[.='1']  "
             ,"//float[.='-Infinity']"
             );
-    assertQ(req("num_sf:\"NaN\"")
+    assertQ(req("num_sf1:\"NaN\"")
             ,"//@numFound[.='1']  "
             ,"//float[.='NaN']"
             );
-    assertQ(req("num_sf:\"-1e20\"")
+    assertQ(req("num_sf1:\"-1e20\"")
             ,"//@numFound[.='1']"
             );
-    assertQ(req("id:44;num_sf asc;")
+    assertQ(req("id:44;num_sf1 asc;")
             ,"//doc[1]/float[.='-Infinity'] "
             ,"//doc[last()]/float[.='NaN']"
             );
-    assertQ(req("id:44;num_sf desc;")
+    assertQ(req("id:44;num_sf1 desc;")
             ,"//doc[1]/float[.='NaN'] "
             ,"//doc[last()]/float[.='-Infinity']"
             );
-    assertQ(req("num_sf:[-1 TO 2]")
+    assertQ(req("num_sf1:[-1 TO 2]")
             ,"*[count(//doc)=4]"
             );
-    assertQ(req("num_sf:[-Infinity TO Infinity]")
+    assertQ(req("num_sf1:[-Infinity TO Infinity]")
             ,"*[count(//doc)=9]"
             );
 
@@ -645,50 +632,50 @@ public class ConvertedLegacyTest extends SolrTestCaseJ4 {
     // test binary double ranges and sorting
 
     assertU("<delete><id>44</id></delete>");
-    assertU("<add allowDups=\"true\"><doc><field name=\"id\">44</field><field name=\"num_sd\">1.4142135</field></doc></add>");
-    assertU("<add allowDups=\"true\"><doc><field name=\"id\">44</field><field name=\"num_sd\">Infinity</field></doc></add>");
-    assertU("<add allowDups=\"true\"><doc><field name=\"id\">44</field><field name=\"num_sd\">-Infinity</field></doc></add>");
-    assertU("<add allowDups=\"true\"><doc><field name=\"id\">44</field><field name=\"num_sd\">NaN</field></doc></add>");
-    assertU("<add allowDups=\"true\"><doc><field name=\"id\">44</field><field name=\"num_sd\">2</field></doc></add>");
-    assertU("<add allowDups=\"true\"><doc><field name=\"id\">44</field><field name=\"num_sd\">-1</field></doc></add>");
-    assertU("<add allowDups=\"true\"><doc><field name=\"id\">44</field><field name=\"num_sd\">1e-100</field></doc></add>");
-    assertU("<add allowDups=\"true\"><doc><field name=\"id\">44</field><field name=\"num_sd\">-999999.99</field></doc></add>");
-    assertU("<add allowDups=\"true\"><doc><field name=\"id\">44</field><field name=\"num_sd\">-1e100</field></doc></add>");
-    assertU("<add allowDups=\"true\"><doc><field name=\"id\">44</field><field name=\"num_sd\">0</field></doc></add>");
+    assertU("<add overwrite=\"false\"><doc><field name=\"id\">44</field><field name=\"num_sd1\">1.4142135</field></doc></add>");
+    assertU("<add overwrite=\"false\"><doc><field name=\"id\">44</field><field name=\"num_sd1\">Infinity</field></doc></add>");
+    assertU("<add overwrite=\"false\"><doc><field name=\"id\">44</field><field name=\"num_sd1\">-Infinity</field></doc></add>");
+    assertU("<add overwrite=\"false\"><doc><field name=\"id\">44</field><field name=\"num_sd1\">NaN</field></doc></add>");
+    assertU("<add overwrite=\"false\"><doc><field name=\"id\">44</field><field name=\"num_sd1\">2</field></doc></add>");
+    assertU("<add overwrite=\"false\"><doc><field name=\"id\">44</field><field name=\"num_sd1\">-1</field></doc></add>");
+    assertU("<add overwrite=\"false\"><doc><field name=\"id\">44</field><field name=\"num_sd1\">1e-100</field></doc></add>");
+    assertU("<add overwrite=\"false\"><doc><field name=\"id\">44</field><field name=\"num_sd1\">-999999.99</field></doc></add>");
+    assertU("<add overwrite=\"false\"><doc><field name=\"id\">44</field><field name=\"num_sd1\">-1e100</field></doc></add>");
+    assertU("<add overwrite=\"false\"><doc><field name=\"id\">44</field><field name=\"num_sd1\">0</field></doc></add>");
     assertU("<commit/>");
     assertQ(req("id:44")
             ,"*[count(//doc)=10]"
             );
-    assertQ(req("num_sd:Infinity")
+    assertQ(req("num_sd1:Infinity")
             ,"//@numFound[.='1']  "
             ,"//double[.='Infinity']"
             );
-    assertQ(req("num_sd:\"-Infinity\"")
+    assertQ(req("num_sd1:\"-Infinity\"")
             ,"//@numFound[.='1']  "
             ,"//double[.='-Infinity']"
             );
-    assertQ(req("num_sd:\"NaN\"")
+    assertQ(req("num_sd1:\"NaN\"")
             ,"//@numFound[.='1']  "
             ,"//double[.='NaN']"
             );
-    assertQ(req("num_sd:\"-1e100\"")
+    assertQ(req("num_sd1:\"-1e100\"")
             ,"//@numFound[.='1']"
             );
-    assertQ(req("num_sd:\"1e-100\"")
+    assertQ(req("num_sd1:\"1e-100\"")
             ,"//@numFound[.='1']"
             );
-    assertQ(req("id:44;num_sd asc;")
+    assertQ(req("id:44;num_sd1 asc;")
             ,"//doc[1]/double[.='-Infinity'] "
             ,"//doc[last()]/double[.='NaN']"
             );
-    assertQ(req("id:44;num_sd desc;")
+    assertQ(req("id:44;num_sd1 desc;")
             ,"//doc[1]/double[.='NaN'] "
             ,"//doc[last()]/double[.='-Infinity']"
             );
-    assertQ(req("num_sd:[-1 TO 2]")
+    assertQ(req("num_sd1:[-1 TO 2]")
             ,"*[count(//doc)=5]"
             );
-    assertQ(req("num_sd:[-Infinity TO Infinity]")
+    assertQ(req("num_sd1:[-Infinity TO Infinity]")
             ,"*[count(//doc)=9]"
             );
 
@@ -696,38 +683,38 @@ public class ConvertedLegacyTest extends SolrTestCaseJ4 {
     // test sorting on multiple fields
 
     assertU("<delete><id>44</id></delete>");
-    assertU("<add allowDups=\"true\"><doc><field name=\"id\">44</field><field name=\"a_i\">10</field></doc></add>");
-    assertU("<add allowDups=\"true\"><doc><field name=\"id\">44</field><field name=\"a_i\">1</field><field name=\"b_i\">100</field></doc></add>");
-    assertU("<add allowDups=\"true\"><doc><field name=\"id\">44</field><field name=\"a_i\">-1</field></doc></add>");
-    assertU("<add allowDups=\"true\"><doc><field name=\"id\">44</field><field name=\"a_i\">15</field></doc></add>");
-    assertU("<add allowDups=\"true\"><doc><field name=\"id\">44</field><field name=\"a_i\">1</field><field name=\"b_i\">50</field></doc></add>");
-    assertU("<add allowDups=\"true\"><doc><field name=\"id\">44</field><field name=\"a_i\">0</field></doc></add>");
+    assertU("<add overwrite=\"false\"><doc><field name=\"id\">44</field><field name=\"a_i1\">10</field></doc></add>");
+    assertU("<add overwrite=\"false\"><doc><field name=\"id\">44</field><field name=\"a_i1\">1</field><field name=\"b_i1\">100</field></doc></add>");
+    assertU("<add overwrite=\"false\"><doc><field name=\"id\">44</field><field name=\"a_i1\">-1</field></doc></add>");
+    assertU("<add overwrite=\"false\"><doc><field name=\"id\">44</field><field name=\"a_i1\">15</field></doc></add>");
+    assertU("<add overwrite=\"false\"><doc><field name=\"id\">44</field><field name=\"a_i1\">1</field><field name=\"b_i1\">50</field></doc></add>");
+    assertU("<add overwrite=\"false\"><doc><field name=\"id\">44</field><field name=\"a_i1\">0</field></doc></add>");
     assertU("<commit/>");
     assertQ(req("id:44")
             ,"*[count(//doc)=6]"
             );
 
-    assertQ(req("id:44; a_i asc,b_i desc")
+    assertQ(req("id:44; a_i1 asc,b_i1 desc")
             ,"*[count(//doc)=6] "
             ,"//doc[3]/int[.='100'] "
             ,"//doc[4]/int[.='50']"
             );
-    assertQ(req("id:44;a_i asc  , b_i asc;")
+    assertQ(req("id:44;a_i1 asc  , b_i1 asc;")
             ,"*[count(//doc)=6] "
             ,"//doc[3]/int[.='50'] "
             ,"//doc[4]/int[.='100']"
             );
-    assertQ(req("id:44;a_i asc;")
+    assertQ(req("id:44;a_i1 asc;")
             ,"*[count(//doc)=6] "
             ,"//doc[1]/int[.='-1'] "
             ,"//doc[last()]/int[.='15']"
             );
-    assertQ(req("id:44;a_i asc , score top;")
+    assertQ(req("id:44;a_i1 asc , score top;")
             ,"*[count(//doc)=6] "
             ,"//doc[1]/int[.='-1'] "
             ,"//doc[last()]/int[.='15']"
             );
-    assertQ(req("id:44; score top , a_i top, b_i bottom ;")
+    assertQ(req("id:44; score top , a_i1 top, b_i1 bottom ;")
             ,"*[count(//doc)=6] "
             ,"//doc[last()]/int[.='-1'] "
             ,"//doc[1]/int[.='15'] "
@@ -739,13 +726,13 @@ public class ConvertedLegacyTest extends SolrTestCaseJ4 {
     // test sorting  with some docs missing the sort field
 
     assertU("<delete><query>id_i:[1000 TO 1010]</query></delete>");
-    assertU("<add allowDups=\"true\"><doc><field name=\"id_i\">1000</field><field name=\"a_i\">1</field><field name=\"nullfirst\">Z</field></doc></add>");
-    assertU("<add allowDups=\"true\"><doc><field name=\"id_i\">1001</field><field name=\"a_i\">10</field><field name=\"nullfirst\">A</field></doc></add>");
-    assertU("<add allowDups=\"true\"><doc><field name=\"id_i\">1002</field><field name=\"a_i\">1</field><field name=\"b_si\">100</field></doc></add>");
-    assertU("<add allowDups=\"true\"><doc><field name=\"id_i\">1003</field><field name=\"a_i\">-1</field></doc></add>");
-    assertU("<add allowDups=\"true\"><doc><field name=\"id_i\">1004</field><field name=\"a_i\">15</field></doc></add>");
-    assertU("<add allowDups=\"true\"><doc><field name=\"id_i\">1005</field><field name=\"a_i\">1</field><field name=\"b_si\">50</field></doc></add>");
-    assertU("<add allowDups=\"true\"><doc><field name=\"id_i\">1006</field><field name=\"a_i\">0</field></doc></add>");
+    assertU("<add overwrite=\"false\"><doc><field name=\"id_i\">1000</field><field name=\"a_i1\">1</field><field name=\"nullfirst\">Z</field></doc></add>");
+    assertU("<add overwrite=\"false\"><doc><field name=\"id_i\">1001</field><field name=\"a_i1\">10</field><field name=\"nullfirst\">A</field></doc></add>");
+    assertU("<add overwrite=\"false\"><doc><field name=\"id_i\">1002</field><field name=\"a_i1\">1</field><field name=\"b_si\">100</field></doc></add>");
+    assertU("<add overwrite=\"false\"><doc><field name=\"id_i\">1003</field><field name=\"a_i1\">-1</field></doc></add>");
+    assertU("<add overwrite=\"false\"><doc><field name=\"id_i\">1004</field><field name=\"a_i1\">15</field></doc></add>");
+    assertU("<add overwrite=\"false\"><doc><field name=\"id_i\">1005</field><field name=\"a_i1\">1</field><field name=\"b_si\">50</field></doc></add>");
+    assertU("<add overwrite=\"false\"><doc><field name=\"id_i\">1006</field><field name=\"a_i1\">0</field></doc></add>");
     assertU("<commit/>");
     assertQ(req("id_i:[1000 TO 1010]")
             ,"*[count(//doc)=7]"
@@ -760,30 +747,30 @@ public class ConvertedLegacyTest extends SolrTestCaseJ4 {
             ,"//doc[1]/int[.='100'] "
             ,"//doc[2]/int[.='50']"
             );
-    assertQ(req("id_i:[1000 TO 1010]; a_i asc,b_si desc")
+    assertQ(req("id_i:[1000 TO 1010]; a_i1 asc,b_si desc")
             ,"*[count(//doc)=7] "
-            ,"//doc[3]/int[.='100'] "
-            ,"//doc[4]/int[.='50']  "
-            ,"//doc[5]/int[.='1000']"
+            ,"//doc[3]/int[@name='b_si' and .='100'] "
+            ,"//doc[4]/int[@name='b_si' and .='50']  "
+            ,"//doc[5]/arr[@name='id_i' and .='1000']"
             );
-    assertQ(req("id_i:[1000 TO 1010]; a_i asc,b_si asc")
+    assertQ(req("id_i:[1000 TO 1010]; a_i1 asc,b_si asc")
             ,"*[count(//doc)=7] "
-            ,"//doc[3]/int[.='50'] "
-            ,"//doc[4]/int[.='100']  "
-            ,"//doc[5]/int[.='1000']"
+            ,"//doc[3]/int[@name='b_si' and .='50'] "
+            ,"//doc[4]/int[@name='b_si' and .='100']  "
+            ,"//doc[5]/arr[@name='id_i' and .='1000']"
             );
     // nullfirst tests
     assertQ(req("id_i:[1000 TO 1002]; nullfirst asc")
             ,"*[count(//doc)=3] "
-            ,"//doc[1]/int[.='1002']"
-            ,"//doc[2]/int[.='1001']  "
-            ,"//doc[3]/int[.='1000']"
+            ,"//doc[1]/arr[@name='id_i' and .='1002']"
+            ,"//doc[2]/arr[@name='id_i' and .='1001']  "
+            ,"//doc[3]/arr[@name='id_i' and .='1000']"
             );
     assertQ(req("id_i:[1000 TO 1002]; nullfirst desc")
             ,"*[count(//doc)=3] "
-            ,"//doc[1]/int[.='1002']"
-            ,"//doc[2]/int[.='1000']  "
-            ,"//doc[3]/int[.='1001']"
+            ,"//doc[1]/arr[@name='id_i' and .='1002']"
+            ,"//doc[2]/arr[@name='id_i' and .='1000']  "
+            ,"//doc[3]/arr[@name='id_i' and .='1001']"
             );
 
     ignoreException("shouldbeunindexed");
@@ -1127,7 +1114,6 @@ public class ConvertedLegacyTest extends SolrTestCaseJ4 {
     assertQ(req("id:44")
             );
     args = new HashMap<String,String>();
-    args.put("version","2.0");
     args.put("fl","fname_s,arr_f  ");
     req = new LocalSolrQueryRequest(h.getCore(), "id:44",
                                     "standard", 0, 10, args);
@@ -1136,19 +1122,17 @@ public class ConvertedLegacyTest extends SolrTestCaseJ4 {
             ,"//float[.='1.4142135']"
             );
     args = new HashMap<String,String>();
-    args.put("version","2.0");
-    args.put("fl","  ");
+    args.put("fl","fname_s,score");
     req = new LocalSolrQueryRequest(h.getCore(), "id:44",
                                     "standard", 0, 10, args);
     assertQ(req
-            ,"//str[.='Yonik']  "
-            ,"//float[.='1.4142135']"
+            ,"//str[.='Yonik']"
+            ,"//float[.='2.9459102']"
             );
 
     // test addition of score field
 
     args = new HashMap<String,String>();
-    args.put("version","2.0");
     args.put("fl","score ");
     req = new LocalSolrQueryRequest(h.getCore(), "id:44",
                                     "standard", 0, 10, args);
@@ -1159,7 +1143,6 @@ public class ConvertedLegacyTest extends SolrTestCaseJ4 {
             ,"*[count(//doc/*)>=13]"
             );
     args = new HashMap<String,String>();
-    args.put("version","2.0");
     args.put("fl","*,score ");
     req = new LocalSolrQueryRequest(h.getCore(), "id:44",
                                     "standard", 0, 10, args);
@@ -1170,7 +1153,6 @@ public class ConvertedLegacyTest extends SolrTestCaseJ4 {
             ,"*[count(//doc/*)>=13]"
             );
     args = new HashMap<String,String>();
-    args.put("version","2.0");
     args.put("fl","* ");
     req = new LocalSolrQueryRequest(h.getCore(), "id:44",
                                     "standard", 0, 10, args);
@@ -1183,7 +1165,6 @@ public class ConvertedLegacyTest extends SolrTestCaseJ4 {
     // test maxScore
 
     args = new HashMap<String,String>();
-    args.put("version","2.0");
     args.put("fl","score ");
     req = new LocalSolrQueryRequest(h.getCore(), "id:44",
                                     "standard", 0, 10, args);
@@ -1191,7 +1172,6 @@ public class ConvertedLegacyTest extends SolrTestCaseJ4 {
             ,"//result[@maxScore>0]"
             );
     args = new HashMap<String,String>();
-    args.put("version","2.0");
     args.put("fl","score ");
     args.put("defType","lucenePlusSort");
     req = new LocalSolrQueryRequest(h.getCore(), "id:44;id desc;",
@@ -1200,7 +1180,6 @@ public class ConvertedLegacyTest extends SolrTestCaseJ4 {
             ,"//result[@maxScore>0]"
             );
     args = new HashMap<String,String>();
-    args.put("version","2.0");
     args.put("fl","score ");
     args.put("defType","lucenePlusSort");
     req = new LocalSolrQueryRequest(h.getCore(), "id:44;",
@@ -1209,7 +1188,6 @@ public class ConvertedLegacyTest extends SolrTestCaseJ4 {
             ,"//@maxScore = //doc/float[@name='score']"
             );
     args = new HashMap<String,String>();
-    args.put("version","2.0");
     args.put("fl","score ");
     args.put("defType","lucenePlusSort");
     req = new LocalSolrQueryRequest(h.getCore(), "id:44;id desc;",
@@ -1218,7 +1196,6 @@ public class ConvertedLegacyTest extends SolrTestCaseJ4 {
             ,"//@maxScore = //doc/float[@name='score']"
             );
     args = new HashMap<String,String>();
-    args.put("version","2.0");
     args.put("fl","score");
     args.put("defType","lucenePlusSort");
     req = new LocalSolrQueryRequest(h.getCore(), "id:44;id desc;",
@@ -1349,16 +1326,5 @@ public class ConvertedLegacyTest extends SolrTestCaseJ4 {
     assertQ(req("+id:45 +text:\"cc dd\"")
             ,"//*[@numFound='1']"
             );
-
-
-    // trigger output of custom value test
-
-    args = new HashMap<String,String>();
-    args.put("version","2.0");
-    req = new LocalSolrQueryRequest(h.getCore(), "values",
-                                    "test", 0, 10, args);
-    assertQ(req
-            );
-
   }
 }

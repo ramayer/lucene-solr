@@ -109,34 +109,6 @@ public class TestAttributeSource extends LuceneTestCase {
     assertEquals("TypeAttribute of original and clone must be equal", typeAtt2, typeAtt);
   }
   
-  public void testToStringAndMultiAttributeImplementations() {
-    AttributeSource src = new AttributeSource();
-    CharTermAttribute termAtt = src.addAttribute(CharTermAttribute.class);
-    TypeAttribute typeAtt = src.addAttribute(TypeAttribute.class);
-    termAtt.append("TestTerm");
-    typeAtt.setType("TestType");    
-    assertEquals("Attributes should appear in original order", "("+termAtt.toString()+","+typeAtt.toString()+")", src.toString());
-    Iterator<AttributeImpl> it = src.getAttributeImplsIterator();
-    assertTrue("Iterator should have 2 attributes left", it.hasNext());
-    assertSame("First AttributeImpl from iterator should be termAtt", termAtt, it.next());
-    assertTrue("Iterator should have 1 attributes left", it.hasNext());
-    assertSame("Second AttributeImpl from iterator should be typeAtt", typeAtt, it.next());
-    assertFalse("Iterator should have 0 attributes left", it.hasNext());
-
-    src = new AttributeSource();
-    src.addAttributeImpl(new Token());
-    // this should not add a new attribute as Token implements CharTermAttribute, too
-    termAtt = src.addAttribute(CharTermAttribute.class);
-    assertTrue("CharTermAttribute should be implemented by Token", termAtt instanceof Token);
-    // get the Token attribute and check, that it is the only one
-    it = src.getAttributeImplsIterator();
-    Token tok = (Token) it.next();
-    assertFalse("There should be only one attribute implementation instance", it.hasNext());
-    
-    termAtt.setEmpty().append("TestTerm");
-    assertEquals("Token should only printed once", "("+tok.toString()+")", src.toString());
-  }
-  
   public void testDefaultAttributeFactory() throws Exception {
     AttributeSource src = new AttributeSource();
     
@@ -174,5 +146,15 @@ public class TestAttributeSource extends LuceneTestCase {
       src.addAttribute((Class) Iterator.class);
       fail("Should throw IllegalArgumentException");
     } catch (IllegalArgumentException iae) {}
+  }
+  
+  public void testLUCENE_3042() throws Exception {
+    final AttributeSource src1 = new AttributeSource();
+    src1.addAttribute(CharTermAttribute.class).append("foo");
+    int hash1 = src1.hashCode(); // this triggers a cached state
+    final AttributeSource src2 = new AttributeSource(src1);
+    src2.addAttribute(TypeAttribute.class).setType("bar");
+    assertTrue("The hashCode is identical, so the captured state was preserved.", hash1 != src1.hashCode());
+    assertEquals(src2.hashCode(), src1.hashCode());
   }
 }

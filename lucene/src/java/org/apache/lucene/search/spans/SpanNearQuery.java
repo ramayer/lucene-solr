@@ -27,6 +27,7 @@ import java.util.Set;
 
 
 import org.apache.lucene.index.IndexReader;
+import org.apache.lucene.index.IndexReader.AtomicReaderContext;
 import org.apache.lucene.index.Term;
 import org.apache.lucene.search.Query;
 import org.apache.lucene.util.ToStringUtils;
@@ -45,7 +46,11 @@ public class SpanNearQuery extends SpanQuery implements Cloneable {
   /** Construct a SpanNearQuery.  Matches spans matching a span from each
    * clause, with up to <code>slop</code> total unmatched positions between
    * them.  * When <code>inOrder</code> is true, the spans from each clause
-   * must be * ordered as in <code>clauses</code>. */
+   * must be * ordered as in <code>clauses</code>.
+   * @param clauses the clauses to find near each other
+   * @param slop The slop value
+   * @param inOrder true if order is important
+   * */
   public SpanNearQuery(SpanQuery[] clauses, int slop, boolean inOrder) {
     this(clauses, slop, inOrder, true);     
   }
@@ -112,16 +117,16 @@ public class SpanNearQuery extends SpanQuery implements Cloneable {
   }
 
   @Override
-  public Spans getSpans(final IndexReader reader) throws IOException {
+  public Spans getSpans(final AtomicReaderContext context) throws IOException {
     if (clauses.size() == 0)                      // optimize 0-clause case
-      return new SpanOrQuery(getClauses()).getSpans(reader);
+      return new SpanOrQuery(getClauses()).getSpans(context);
 
     if (clauses.size() == 1)                      // optimize 1-clause case
-      return clauses.get(0).getSpans(reader);
+      return clauses.get(0).getSpans(context);
 
     return inOrder
-            ? (Spans) new NearSpansOrdered(this, reader, collectPayloads)
-            : (Spans) new NearSpansUnordered(this, reader);
+            ? (Spans) new NearSpansOrdered(this, context, collectPayloads)
+            : (Spans) new NearSpansUnordered(this, context);
   }
 
   @Override

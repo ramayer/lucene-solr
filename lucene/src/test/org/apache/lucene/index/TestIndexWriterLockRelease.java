@@ -21,10 +21,11 @@ import java.io.File;
 import java.io.FileNotFoundException;
 import java.io.IOException;
 import org.apache.lucene.util.LuceneTestCase;
+import org.apache.lucene.util._TestUtil;
 import org.apache.lucene.analysis.MockAnalyzer;
 import org.apache.lucene.index.IndexWriter;
 import org.apache.lucene.index.IndexWriterConfig.OpenMode;
-import org.apache.lucene.store.FSDirectory;
+import org.apache.lucene.store.Directory;
 
 /**
  * This tests the patch for issue #LUCENE-715 (IndexWriter does not
@@ -36,10 +37,10 @@ public class TestIndexWriterLockRelease extends LuceneTestCase {
     private java.io.File __test_dir;
 
     @Override
-    protected void setUp() throws Exception {
+    public void setUp() throws Exception {
         super.setUp();
         if (this.__test_dir == null) {
-            this.__test_dir = new File(TEMP_DIR, "testIndexWriter");
+            this.__test_dir = _TestUtil.getTempDir("testIndexWriter");
 
             if (this.__test_dir.exists()) {
                 throw new IOException("test directory \"" + this.__test_dir.getPath() + "\" already exists (please remove by hand)");
@@ -53,7 +54,7 @@ public class TestIndexWriterLockRelease extends LuceneTestCase {
     }
 
     @Override
-    protected void tearDown() throws Exception {
+    public void tearDown() throws Exception {
         if (this.__test_dir != null) {
             File[] files = this.__test_dir.listFiles();
 
@@ -73,20 +74,16 @@ public class TestIndexWriterLockRelease extends LuceneTestCase {
     }
 
     public void testIndexWriterLockRelease() throws IOException {
-        FSDirectory dir = FSDirectory.open(this.__test_dir);
+      Directory dir = newFSDirectory(this.__test_dir);
+      try {
+        new IndexWriter(dir, new IndexWriterConfig(TEST_VERSION_CURRENT, new MockAnalyzer(random)).setOpenMode(OpenMode.APPEND));
+      } catch (FileNotFoundException e) {
         try {
-          new IndexWriter(dir, new IndexWriterConfig(TEST_VERSION_CURRENT,
-              new MockAnalyzer())
-          .setOpenMode(OpenMode.APPEND));
-        } catch (FileNotFoundException e) {
-            try {
-              new IndexWriter(dir, new IndexWriterConfig(TEST_VERSION_CURRENT,
-                  new MockAnalyzer())
-              .setOpenMode(OpenMode.APPEND));
-            } catch (FileNotFoundException e1) {
-            }
-        } finally {
-          dir.close();
+          new IndexWriter(dir, new IndexWriterConfig(TEST_VERSION_CURRENT, new MockAnalyzer(random)).setOpenMode(OpenMode.APPEND));
+        } catch (FileNotFoundException e1) {
         }
+      } finally {
+        dir.close();
+      }
     }
 }

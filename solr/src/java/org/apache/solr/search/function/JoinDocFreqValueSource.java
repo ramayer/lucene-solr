@@ -21,8 +21,10 @@ import java.io.IOException;
 import java.util.Map;
 
 import org.apache.lucene.index.IndexReader;
+import org.apache.lucene.index.IndexReader.AtomicReaderContext;
 import org.apache.lucene.search.FieldCache.DocTerms;
 import org.apache.lucene.util.BytesRef;
+import org.apache.lucene.util.ReaderUtil;
 import org.apache.solr.common.SolrException;
 
 /**
@@ -41,52 +43,37 @@ public class JoinDocFreqValueSource extends FieldCacheSource {
     this.qfield = qfield;
   }
 
+  @Override
   public String description() {
     return NAME + "(" + field +":("+qfield+"))";
   }
 
-  public DocValues getValues(Map context, final IndexReader reader) throws IOException 
+  @Override
+  public DocValues getValues(Map context, AtomicReaderContext readerContext) throws IOException 
   {
-    final DocTerms terms = cache.getTerms(reader, field, true );
+    final DocTerms terms = cache.getTerms(readerContext.reader, field, true );
+    final IndexReader top = ReaderUtil.getTopLevelContext(readerContext).reader;
     
-    return new DocValues() {
+    return new IntDocValues(this) {
+      BytesRef ref = new BytesRef();
 
+      @Override
       public int intVal(int doc) 
       {
         try {
-          BytesRef ref = new BytesRef();
           terms.getTerm(doc, ref);
-          int v = reader.docFreq( qfield, ref ); 
-          //System.out.println( NAME+"["+ref.utf8ToString()+"="+v+"]" );
+          int v = top.docFreq( qfield, ref ); 
+          //System.out.println( NAME+"["+field+"="+ref.utf8ToString()+"=("+qfield+":"+v+")]" );
           return v;
         } 
         catch (IOException e) {
           throw new SolrException(SolrException.ErrorCode.SERVER_ERROR, "caught exception in function "+description()+" : doc="+doc, e);
         }
       }
-
-      public float floatVal(int doc) {
-        return (float)intVal(doc);
-      }
-
-      public long longVal(int doc) {
-        return (long)intVal(doc);
-      }
-
-      public double doubleVal(int doc) {
-        return (double)intVal(doc);
-      }
-
-      public String strVal(int doc) {
-        return intVal(doc) + "";
-      }
-
-      public String toString(int doc) {
-        return description() + '=' + intVal(doc);
-      }
     };
   }
   
+  @Override
   public boolean equals(Object o) {
     if (o.getClass() !=  JoinDocFreqValueSource.class) return false;
     JoinDocFreqValueSource other = (JoinDocFreqValueSource)o;
@@ -94,6 +81,7 @@ public class JoinDocFreqValueSource extends FieldCacheSource {
     return super.equals(other);
   }
 
+  @Override
   public int hashCode() {
     return qfield.hashCode() + super.hashCode();
   };

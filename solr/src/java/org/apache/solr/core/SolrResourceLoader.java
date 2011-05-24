@@ -69,7 +69,7 @@ public class SolrResourceLoader implements ResourceLoader
   static final String base = "org.apache" + "." + project;
   static final String[] packages = {"","analysis.","schema.","handler.","search.","update.","core.","response.","request.","update.processor.","util.", "spelling.", "handler.component.", "handler.dataimport." };
 
-  private URLClassLoader classLoader;
+  protected URLClassLoader classLoader;
   private final String instanceDir;
   private String dataDir;
   
@@ -205,6 +205,15 @@ public class SolrResourceLoader implements ResourceLoader
   public  static String normalizeDir(String path) {
     return ( path != null && (!(path.endsWith("/") || path.endsWith("\\"))) )? path + File.separator : path;
   }
+  
+  public String[] listConfigDir() {
+    File configdir = new File(getConfigDir());
+    if( configdir.exists() && configdir.isDirectory() ) {
+      return configdir.list();
+    } else {
+      return new String[0];
+    }
+  }
 
   public String getConfigDir() {
     return instanceDir + "conf/";
@@ -269,6 +278,8 @@ public class SolrResourceLoader implements ResourceLoader
       }
       // delegate to the class loader (looking into $INSTANCE_DIR/lib jars)
       is = classLoader.getResourceAsStream(resource);
+      if (is == null)
+        is = classLoader.getResourceAsStream(getConfigDir() + resource);
     } catch (Exception e) {
       throw new RuntimeException("Error opening " + resource, e);
     }
@@ -625,10 +636,7 @@ public class SolrResourceLoader implements ResourceLoader
     }
     return normalizeDir( home );
   }
-  @Deprecated
-  public static String locateInstanceDir() {
-    return locateSolrHome();
-  }
+
 
   public String getInstanceDir() {
     return instanceDir;

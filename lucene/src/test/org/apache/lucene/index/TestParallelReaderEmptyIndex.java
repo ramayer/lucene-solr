@@ -18,7 +18,6 @@ package org.apache.lucene.index;
  */
 
 import java.io.IOException;
-import java.util.Random;
 
 import org.apache.lucene.store.Directory;
 import org.apache.lucene.util.LuceneTestCase;
@@ -26,7 +25,6 @@ import org.apache.lucene.util._TestUtil;
 
 import org.apache.lucene.analysis.MockAnalyzer;
 import org.apache.lucene.document.Document;
-import org.apache.lucene.document.Field;
 import org.apache.lucene.document.Field.Index;
 import org.apache.lucene.document.Field.Store;
 import org.apache.lucene.document.Field.TermVector;
@@ -46,22 +44,21 @@ public class TestParallelReaderEmptyIndex extends LuceneTestCase {
    * @throws IOException
    */
   public void testEmptyIndex() throws IOException {
-    Random random = newRandom();
-    Directory rd1 = newDirectory(random);
-    IndexWriter iw = new IndexWriter(rd1, newIndexWriterConfig(random, TEST_VERSION_CURRENT, new MockAnalyzer()));
+    Directory rd1 = newDirectory();
+    IndexWriter iw = new IndexWriter(rd1, newIndexWriterConfig( TEST_VERSION_CURRENT, new MockAnalyzer(random)));
     iw.close();
 
-    Directory rd2 = newDirectory(random, rd1);
+    Directory rd2 = newDirectory(rd1);
 
-    Directory rdOut = newDirectory(random);
+    Directory rdOut = newDirectory();
 
-    IndexWriter iwOut = new IndexWriter(rdOut, newIndexWriterConfig(random, TEST_VERSION_CURRENT, new MockAnalyzer()));
+    IndexWriter iwOut = new IndexWriter(rdOut, newIndexWriterConfig( TEST_VERSION_CURRENT, new MockAnalyzer(random)));
     ParallelReader pr = new ParallelReader();
     pr.add(IndexReader.open(rd1,true));
     pr.add(IndexReader.open(rd2,true));
 		
     // When unpatched, Lucene crashes here with a NoSuchElementException (caused by ParallelTermEnum)
-    iwOut.addIndexes(new IndexReader[] { pr });
+    iwOut.addIndexes(pr);
 		
     iwOut.optimize();
     iwOut.close();
@@ -77,15 +74,14 @@ public class TestParallelReaderEmptyIndex extends LuceneTestCase {
    * any exception.
    */
   public void testEmptyIndexWithVectors() throws IOException {
-    Random random = newRandom();
-    Directory rd1 = newDirectory(random);
+    Directory rd1 = newDirectory();
     {
-      IndexWriter iw = new IndexWriter(rd1, newIndexWriterConfig(random, TEST_VERSION_CURRENT, new MockAnalyzer()));
+      IndexWriter iw = new IndexWriter(rd1, newIndexWriterConfig( TEST_VERSION_CURRENT, new MockAnalyzer(random)));
       Document doc = new Document();
-      doc.add(new Field("test", "", Store.NO, Index.ANALYZED,
+      doc.add(newField("test", "", Store.NO, Index.ANALYZED,
                         TermVector.YES));
       iw.addDocument(doc);
-      doc.add(new Field("test", "", Store.NO, Index.ANALYZED,
+      doc.add(newField("test", "", Store.NO, Index.ANALYZED,
                         TermVector.NO));
       iw.addDocument(doc);
       iw.close();
@@ -94,28 +90,28 @@ public class TestParallelReaderEmptyIndex extends LuceneTestCase {
       ir.deleteDocument(0);
       ir.close();
 
-      iw = new IndexWriter(rd1, newIndexWriterConfig(random, TEST_VERSION_CURRENT, new MockAnalyzer()).setOpenMode(OpenMode.APPEND));
+      iw = new IndexWriter(rd1, newIndexWriterConfig( TEST_VERSION_CURRENT, new MockAnalyzer(random)).setOpenMode(OpenMode.APPEND));
       iw.optimize();
       iw.close();
     }
 
-    Directory rd2 = newDirectory(random);
+    Directory rd2 = newDirectory();
     {
-      IndexWriter iw = new IndexWriter(rd2, newIndexWriterConfig(random, TEST_VERSION_CURRENT, new MockAnalyzer()));
+      IndexWriter iw = new IndexWriter(rd2, newIndexWriterConfig( TEST_VERSION_CURRENT, new MockAnalyzer(random)));
       Document doc = new Document();
       iw.addDocument(doc);
       iw.close();
     }
 
-    Directory rdOut = newDirectory(random);
+    Directory rdOut = newDirectory();
 
-    IndexWriter iwOut = new IndexWriter(rdOut, newIndexWriterConfig(random, TEST_VERSION_CURRENT, new MockAnalyzer()));
+    IndexWriter iwOut = new IndexWriter(rdOut, newIndexWriterConfig( TEST_VERSION_CURRENT, new MockAnalyzer(random)));
     ParallelReader pr = new ParallelReader();
     pr.add(IndexReader.open(rd1,true));
     pr.add(IndexReader.open(rd2,true));
 
     // When unpatched, Lucene crashes here with an ArrayIndexOutOfBoundsException (caused by TermVectorsWriter)
-    iwOut.addIndexes(new IndexReader[] { pr });
+    iwOut.addIndexes(pr);
 
     // ParallelReader closes any IndexReader you added to it:
     pr.close();

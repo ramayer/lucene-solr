@@ -24,21 +24,20 @@ import org.apache.lucene.index.SegmentInfo;
 import org.apache.lucene.index.SegmentWriteState;
 import org.apache.lucene.index.SegmentReadState;
 import org.apache.lucene.index.codecs.Codec;
+import org.apache.lucene.index.codecs.PostingsWriterBase;
 import org.apache.lucene.index.codecs.standard.StandardPostingsWriter;
-import org.apache.lucene.index.codecs.standard.StandardPostingsWriterImpl;
+import org.apache.lucene.index.codecs.PostingsReaderBase;
 import org.apache.lucene.index.codecs.standard.StandardPostingsReader;
-import org.apache.lucene.index.codecs.standard.StandardPostingsReaderImpl;
 import org.apache.lucene.index.codecs.FieldsConsumer;
 import org.apache.lucene.index.codecs.FieldsProducer;
-import org.apache.lucene.index.codecs.standard.SimpleStandardTermsIndexReader;
-import org.apache.lucene.index.codecs.standard.SimpleStandardTermsIndexWriter;
-import org.apache.lucene.index.codecs.standard.StandardTermsDictReader;
-import org.apache.lucene.index.codecs.standard.StandardTermsDictWriter;
-import org.apache.lucene.index.codecs.standard.StandardTermsIndexReader;
-import org.apache.lucene.index.codecs.standard.StandardTermsIndexWriter;
+import org.apache.lucene.index.codecs.VariableGapTermsIndexReader;
+import org.apache.lucene.index.codecs.VariableGapTermsIndexWriter;
+import org.apache.lucene.index.codecs.BlockTermsReader;
+import org.apache.lucene.index.codecs.BlockTermsWriter;
+import org.apache.lucene.index.codecs.TermsIndexReaderBase;
+import org.apache.lucene.index.codecs.TermsIndexWriterBase;
 import org.apache.lucene.index.codecs.standard.StandardCodec;
 import org.apache.lucene.store.Directory;
-import org.apache.lucene.util.BytesRef;
 
 /** This codec "inlines" the postings for terms that have
  *  low docFreq.  It wraps another codec, which is used for
@@ -66,19 +65,19 @@ public class PulsingCodec extends Codec {
 
   @Override
   public FieldsConsumer fieldsConsumer(SegmentWriteState state) throws IOException {
-    // We wrap StandardPostingsWriterImpl, but any StandardPostingsWriter
+    // We wrap StandardPostingsWriter, but any StandardPostingsWriter
     // will work:
-    StandardPostingsWriter docsWriter = new StandardPostingsWriterImpl(state);
+    PostingsWriterBase docsWriter = new StandardPostingsWriter(state);
 
     // Terms that have <= freqCutoff number of docs are
     // "pulsed" (inlined):
-    StandardPostingsWriter pulsingWriter = new PulsingPostingsWriterImpl(freqCutoff, docsWriter);
+    PostingsWriterBase pulsingWriter = new PulsingPostingsWriterImpl(freqCutoff, docsWriter);
 
     // Terms dict index
-    StandardTermsIndexWriter indexWriter;
+    TermsIndexWriterBase indexWriter;
     boolean success = false;
     try {
-      indexWriter = new SimpleStandardTermsIndexWriter(state);
+      indexWriter = new VariableGapTermsIndexWriter(state, new VariableGapTermsIndexWriter.EveryNTermSelector(state.termIndexInterval));
       success = true;
     } finally {
       if (!success) {
@@ -89,7 +88,7 @@ public class PulsingCodec extends Codec {
     // Terms dict
     success = false;
     try {
-      FieldsConsumer ret = new StandardTermsDictWriter(indexWriter, state, pulsingWriter, BytesRef.getUTF8SortedAsUnicodeComparator());
+      FieldsConsumer ret = new BlockTermsWriter(indexWriter, state, pulsingWriter);
       success = true;
       return ret;
     } finally {
@@ -106,21 +105,21 @@ public class PulsingCodec extends Codec {
   @Override
   public FieldsProducer fieldsProducer(SegmentReadState state) throws IOException {
 
-    // We wrap StandardPostingsReaderImpl, but any StandardPostingsReader
+    // We wrap StandardPostingsReader, but any StandardPostingsReader
     // will work:
-    StandardPostingsReader docsReader = new StandardPostingsReaderImpl(state.dir, state.segmentInfo, state.readBufferSize);
-    StandardPostingsReader pulsingReader = new PulsingPostingsReaderImpl(docsReader);
+    PostingsReaderBase docsReader = new StandardPostingsReader(state.dir, state.segmentInfo, state.readBufferSize, state.codecId);
+    PostingsReaderBase pulsingReader = new PulsingPostingsReaderImpl(docsReader);
 
     // Terms dict index reader
-    StandardTermsIndexReader indexReader;
+    TermsIndexReaderBase indexReader;
 
     boolean success = false;
     try {
-      indexReader = new SimpleStandardTermsIndexReader(state.dir,
-                                                       state.fieldInfos,
-                                                       state.segmentInfo.name,
-                                                       state.termsIndexDivisor,
-                                                       BytesRef.getUTF8SortedAsUnicodeComparator());
+      indexReader = new VariableGapTermsIndexReader(state.dir,
+                                                    state.fieldInfos,
+                                                    state.segmentInfo.name,
+                                                    state.termsIndexDivisor,
+                                                    state.codecId);
       success = true;
     } finally {
       if (!success) {
@@ -131,12 +130,12 @@ public class PulsingCodec extends Codec {
     // Terms dict reader
     success = false;
     try {
-      FieldsProducer ret = new StandardTermsDictReader(indexReader,
-                                                       state.dir, state.fieldInfos, state.segmentInfo.name,
-                                                       pulsingReader,
-                                                       state.readBufferSize,
-                                                       BytesRef.getUTF8SortedAsUnicodeComparator(),
-                                                       StandardCodec.TERMS_CACHE_SIZE);
+      FieldsProducer ret = new BlockTermsReader(indexReader,
+                                                state.dir, state.fieldInfos, state.segmentInfo.name,
+                                                pulsingReader,
+                                                state.readBufferSize,
+                                                StandardCodec.TERMS_CACHE_SIZE,
+                                                state.codecId);
       success = true;
       return ret;
     } finally {
@@ -151,10 +150,10 @@ public class PulsingCodec extends Codec {
   }
 
   @Override
-  public void files(Directory dir, SegmentInfo segmentInfo, Set<String> files) throws IOException {
-    StandardPostingsReaderImpl.files(dir, segmentInfo, files);
-    StandardTermsDictReader.files(dir, segmentInfo, files);
-    SimpleStandardTermsIndexReader.files(dir, segmentInfo, files);
+  public void files(Directory dir, SegmentInfo segmentInfo, String id, Set<String> files) throws IOException {
+    StandardPostingsReader.files(dir, segmentInfo, id, files);
+    BlockTermsReader.files(dir, segmentInfo, id, files);
+    VariableGapTermsIndexReader.files(dir, segmentInfo, id, files);
   }
 
   @Override

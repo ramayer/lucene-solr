@@ -17,19 +17,22 @@ package org.apache.lucene;
  * limitations under the License.
  */
 import java.io.IOException;
-import java.util.Random;
 
 import org.apache.lucene.util.LuceneTestCase;
+import org.apache.lucene.store.Directory;
 import org.apache.lucene.store.MockDirectoryWrapper;
+import org.apache.lucene.store.RAMDirectory;
+import org.apache.lucene.index.CorruptIndexException;
 import org.apache.lucene.index.IndexWriter;
 import org.apache.lucene.index.IndexWriterConfig;
 import org.apache.lucene.index.LogMergePolicy;
 import org.apache.lucene.index.MergePolicy;
 import org.apache.lucene.index.ConcurrentMergeScheduler;
+import org.apache.lucene.index.MergeScheduler;
+import org.apache.lucene.index.MergePolicy.OneMerge;
 import org.apache.lucene.analysis.MockAnalyzer;
 import org.apache.lucene.document.Document;
 import org.apache.lucene.document.Field;
-
 
 /**
  * Holds tests cases to verify external APIs are accessible
@@ -83,18 +86,17 @@ public class TestMergeSchedulerExternal extends LuceneTestCase {
   }
 
   public void testSubclassConcurrentMergeScheduler() throws IOException {
-    Random random = newRandom();
-    MockDirectoryWrapper dir = newDirectory(random);
+    MockDirectoryWrapper dir = newDirectory();
     dir.failOn(new FailOnlyOnMerge());
 
     Document doc = new Document();
-    Field idField = new Field("id", "", Field.Store.YES, Field.Index.NOT_ANALYZED);
+    Field idField = newField("id", "", Field.Store.YES, Field.Index.NOT_ANALYZED);
     doc.add(idField);
     
-    IndexWriter writer = new IndexWriter(dir, newIndexWriterConfig(random,
-        TEST_VERSION_CURRENT, new MockAnalyzer()).setMergeScheduler(new MyMergeScheduler())
-        .setMaxBufferedDocs(2).setRAMBufferSizeMB(
-            IndexWriterConfig.DISABLE_AUTO_FLUSH));
+    IndexWriter writer = new IndexWriter(dir, newIndexWriterConfig(
+        TEST_VERSION_CURRENT, new MockAnalyzer(random)).setMergeScheduler(new MyMergeScheduler())
+        .setMaxBufferedDocs(2).setRAMBufferSizeMB(IndexWriterConfig.DISABLE_AUTO_FLUSH)
+        .setMergePolicy(newLogMergePolicy()));
     LogMergePolicy logMP = (LogMergePolicy) writer.getConfig().getMergePolicy();
     logMP.setMergeFactor(10);
     for(int i=0;i<20;i++)
@@ -107,6 +109,41 @@ public class TestMergeSchedulerExternal extends LuceneTestCase {
     assertTrue(mergeCalled);
     assertTrue(excCalled);
     dir.close();
-    assertTrue(ConcurrentMergeScheduler.anyUnhandledExceptions());
   }
+  
+  private static class ReportingMergeScheduler extends MergeScheduler {
+
+    @Override
+    public void merge(IndexWriter writer) throws CorruptIndexException, IOException {
+      OneMerge merge = null;
+      while ((merge = writer.getNextMerge()) != null) {
+        if (VERBOSE) {
+          System.out.println("executing merge " + merge.segString(writer.getDirectory()));
+        }
+        writer.merge(merge);
+      }
+    }
+
+    @Override
+    public void close() throws CorruptIndexException, IOException {}
+    
+  }
+
+  public void testCustomMergeScheduler() throws Exception {
+    // we don't really need to execute anything, just to make sure the custom MS
+    // compiles. But ensure that it can be used as well, e.g., no other hidden
+    // dependencies or something. Therefore, don't use any random API !
+    Directory dir = new RAMDirectory();
+    IndexWriterConfig conf = new IndexWriterConfig(TEST_VERSION_CURRENT, null);
+    conf.setMergeScheduler(new ReportingMergeScheduler());
+    IndexWriter writer = new IndexWriter(dir, conf);
+    writer.addDocument(new Document());
+    writer.commit(); // trigger flush
+    writer.addDocument(new Document());
+    writer.commit(); // trigger flush
+    writer.optimize();
+    writer.close();
+    dir.close();
+  }
+  
 }

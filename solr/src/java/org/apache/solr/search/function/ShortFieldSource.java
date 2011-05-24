@@ -16,8 +16,9 @@ package org.apache.solr.search.function;
  * limitations under the License.
  */
 
-import org.apache.lucene.search.FieldCache;
-import org.apache.lucene.index.IndexReader;
+import org.apache.lucene.search.cache.ShortValuesCreator;
+import org.apache.lucene.search.cache.CachedArray.ShortValues;
+import org.apache.lucene.index.IndexReader.AtomicReaderContext;
 
 import java.io.IOException;
 import java.util.Map;
@@ -27,26 +28,23 @@ import java.util.Map;
  *
  *
  **/
-public class ShortFieldSource extends FieldCacheSource{
-  FieldCache.ShortParser parser;
+public class ShortFieldSource extends NumericFieldCacheSource<ShortValues> {
 
-  public ShortFieldSource(String field) {
-    this(field, null);
+  public ShortFieldSource(ShortValuesCreator creator) {
+    super(creator);
   }
 
-  public ShortFieldSource(String field, FieldCache.ShortParser parser) {
-    super(field);
-    this.parser = parser;
-  }
 
+  @Override
   public String description() {
     return "short(" + field + ')';
   }
 
-  public DocValues getValues(Map context, IndexReader reader) throws IOException {
-    final short[] arr = (parser == null) ?
-            cache.getShorts(reader, field) :
-            cache.getShorts(reader, field, parser);
+  @Override
+  public DocValues getValues(Map context, AtomicReaderContext readerContext) throws IOException {
+    final ShortValues vals = cache.getShorts(readerContext.reader, field, creator);
+    final short[] arr = vals.values;
+    
     return new DocValues() {
       @Override
       public byte byteVal(int doc) {
@@ -55,48 +53,39 @@ public class ShortFieldSource extends FieldCacheSource{
 
       @Override
       public short shortVal(int doc) {
-        return (short) arr[doc];
+        return arr[doc];
       }
 
+      @Override
       public float floatVal(int doc) {
         return (float) arr[doc];
       }
 
+      @Override
       public int intVal(int doc) {
         return (int) arr[doc];
       }
 
+      @Override
       public long longVal(int doc) {
         return (long) arr[doc];
       }
 
+      @Override
       public double doubleVal(int doc) {
         return (double) arr[doc];
       }
 
+      @Override
       public String strVal(int doc) {
         return Short.toString(arr[doc]);
       }
 
+      @Override
       public String toString(int doc) {
         return description() + '=' + shortVal(doc);
       }
 
     };
-  }
-
-  public boolean equals(Object o) {
-    if (o.getClass() != ShortFieldSource.class) return false;
-    ShortFieldSource
-            other = (ShortFieldSource) o;
-    return super.equals(other)
-            && this.parser == null ? other.parser == null :
-            this.parser.getClass() == other.parser.getClass();
-  }
-
-  public int hashCode() {
-    int h = parser == null ? Short.class.hashCode() : parser.getClass().hashCode();
-    h += super.hashCode();
-    return h;
   }
 }

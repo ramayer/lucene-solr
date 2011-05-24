@@ -18,12 +18,10 @@
 package org.apache.solr.update;
 
 import java.util.ArrayList;
-import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
 
 import org.apache.lucene.document.Document;
-import org.apache.lucene.document.Field;
 import org.apache.lucene.document.Fieldable;
 import org.apache.solr.common.SolrDocument;
 import org.apache.solr.common.SolrException;
@@ -73,7 +71,7 @@ public class DocumentBuilder {
         }
       }
     } else {
-      Field field = sfield.createField(val, boost);
+      Fieldable field = sfield.createField(val, boost);
       if (field != null) {
         if (!sfield.multiValued()) {
           String oldValue = map.put(sfield.getName(), val);
@@ -161,7 +159,7 @@ public class DocumentBuilder {
     // default value are defacto 'required' fields.  
     List<String> missingFields = null;
     for (SchemaField field : schema.getRequiredFields()) {
-      if (doc.getField(field.getName() ) == null) {
+      if (doc.getFieldable(field.getName() ) == null) {
         if (field.getDefaultValue() != null) {
           addField(doc, field, field.getDefaultValue(), 1.0f);
         } else {
@@ -194,18 +192,27 @@ public class DocumentBuilder {
   }
 
 
-  private static void addField(Document doc, SchemaField field, String val, float boost) {
+  private static void addField(Document doc, SchemaField field, Object val, float boost) {
     if (field.isPolyField()) {
       Fieldable[] farr = field.getType().createFields(field, val, boost);
       for (Fieldable f : farr) {
         if (f != null) doc.add(f); // null fields are not added
       }
     } else {
-      Field f = field.createField(val, boost);
+      Fieldable f = field.createField(val, boost);
       if (f != null) doc.add(f);  // null fields are not added
     }
   }
   
+  private static String getID( SolrInputDocument doc, IndexSchema schema )
+  {
+    String id = "";
+    SchemaField sf = schema.getUniqueKeyField();
+    if( sf != null ) {
+      id = "[doc="+doc.getFieldValue( sf.getName() )+"] ";
+    }
+    return id;
+  }
 
   /**
    * Convert a SolrInputDocument to a lucene Document.
@@ -235,91 +242,70 @@ public class DocumentBuilder {
       
       // Make sure it has the correct number
       if( sfield!=null && !sfield.multiValued() && field.getValueCount() > 1 ) {
-        String id = "";
-        SchemaField sf = schema.getUniqueKeyField();
-        if( sf != null ) {
-          id = "["+doc.getFieldValue( sf.getName() )+"] ";
-        }
         throw new SolrException( SolrException.ErrorCode.BAD_REQUEST,
-            "ERROR: "+id+"multiple values encountered for non multiValued field " + 
+            "ERROR: "+getID(doc, schema)+"multiple values encountered for non multiValued field " + 
               sfield.getName() + ": " +field.getValue() );
       }
       
 
       // load each field value
       boolean hasField = false;
-      for( Object v : field ) {
-        if( v == null ) {
-          continue;
-        }
-        String val = null;
-        hasField = true;
-        boolean isBinaryField = false;
-        if (sfield != null && sfield.getType() instanceof BinaryField) {
-          isBinaryField = true;
-          BinaryField binaryField = (BinaryField) sfield.getType();
-          Field f = binaryField.createField(sfield,v,boost);
-          if(f != null){
-            out.add(f);
+      try {
+        for( Object v : field ) {
+          if( v == null ) {
+            continue;
           }
-          used = true;
-        } else {
-          // TODO!!! HACK -- date conversion
-          if (sfield != null && v instanceof Date && sfield.getType() instanceof DateField) {
-            DateField df = (DateField) sfield.getType();
-            val = df.toInternal((Date) v) + 'Z';
-          } else if (v != null) {
-            val = v.toString();
-          }
-
+          hasField = true;
           if (sfield != null) {
             used = true;
-            addField(out, sfield, val, boost);
+            addField(out, sfield, v, boost);
           }
-        }
-
-        // Check if we should copy this field to any other fields.
-        // This could happen whether it is explicit or not.
-        List<CopyField> copyFields = schema.getCopyFieldsList(name);
-        for (CopyField cf : copyFields) {
-          SchemaField destinationField = cf.getDestination();
-          // check if the copy field is a multivalued or not
-          if (!destinationField.multiValued() && out.get(destinationField.getName()) != null) {
-            throw new SolrException(SolrException.ErrorCode.BAD_REQUEST,
-                    "ERROR: multiple values encountered for non multiValued copy field " +
-                            destinationField.getName() + ": " + val);
-          }
-
-          used = true;
-          //Don't worry about poly fields here
-          Fieldable [] fields = null;
-          if (isBinaryField) {
-            if (destinationField.getType() instanceof BinaryField) {
-              BinaryField binaryField = (BinaryField) destinationField.getType();
-              //TODO: safe to assume that binary fields only create one?
-              fields = new Field[]{binaryField.createField(destinationField, v, boost)};
+  
+          // Check if we should copy this field to any other fields.
+          // This could happen whether it is explicit or not.
+          List<CopyField> copyFields = schema.getCopyFieldsList(name);
+          for (CopyField cf : copyFields) {
+            SchemaField destinationField = cf.getDestination();
+            // check if the copy field is a multivalued or not
+            if (!destinationField.multiValued() && out.getFieldable(destinationField.getName()) != null) {
+              throw new SolrException(SolrException.ErrorCode.BAD_REQUEST,
+                      "ERROR: "+getID(doc, schema)+"multiple values encountered for non multiValued copy field " +
+                              destinationField.getName() + ": " + v);
             }
-          } else {
-            fields = destinationField.createFields(cf.getLimitedValue(val), boost);
-          }
-          if (fields != null) { // null fields are not added
-            for (Fieldable f : fields) {
-              out.add(f);
+  
+            used = true;
+            
+            // Perhaps trim the length of a copy field
+            Object val = v;
+            if( val instanceof String && cf.getMaxChars() > 0 ) {
+              val = cf.getLimitedValue((String)val);
+            }
+            
+            Fieldable [] fields = destinationField.createFields(val, boost);
+            if (fields != null) { // null fields are not added
+              for (Fieldable f : fields) {
+                if(f != null) out.add(f);
+              }
             }
           }
+          
+          // In lucene, the boost for a given field is the product of the 
+          // document boost and *all* boosts on values of that field. 
+          // For multi-valued fields, we only want to set the boost on the
+          // first field.
+          boost = 1.0f; 
         }
-        
-        // In lucene, the boost for a given field is the product of the 
-        // document boost and *all* boosts on values of that field. 
-        // For multi-valued fields, we only want to set the boost on the
-        // first field.
-        boost = 1.0f; 
+      }
+      catch( Exception ex ) {
+        throw new SolrException( SolrException.ErrorCode.BAD_REQUEST,
+            "ERROR: "+getID(doc, schema)+"Error adding field '" + 
+              field.getName() + "'='" +field.getValue()+"'", ex );
       }
       
       // make sure the field was used somehow...
       if( !used && hasField ) {
-        throw new SolrException( SolrException.ErrorCode.BAD_REQUEST,"ERROR:unknown field '" +
-                name + "'");
+        throw new SolrException( SolrException.ErrorCode.BAD_REQUEST,
+            "ERROR: "+getID(doc, schema)+"unknown field '" +name + "'");
       }
     }
     
@@ -327,13 +313,12 @@ public class DocumentBuilder {
     // Now validate required fields or add default values
     // fields with default values are defacto 'required'
     for (SchemaField field : schema.getRequiredFields()) {
-      if (out.getField(field.getName() ) == null) {
+      if (out.getFieldable(field.getName() ) == null) {
         if (field.getDefaultValue() != null) {
           addField(out, field, field.getDefaultValue(), 1.0f);
         } 
         else {
-          String id = schema.printableUniqueKey( out );
-          String msg = "Document ["+id+"] missing required field: " + field.getName();
+          String msg = getID(doc, schema) + "missing required field: " + field.getName();
           throw new SolrException( SolrException.ErrorCode.BAD_REQUEST, msg );
         }
       }
@@ -354,8 +339,7 @@ public class DocumentBuilder {
    */
   public SolrDocument loadStoredFields( SolrDocument doc, Document luceneDoc  )
   {
-    for( Object f : luceneDoc.getFields() ) {
-      Fieldable field = (Fieldable)f;
+    for( Fieldable field : luceneDoc.getFields() ) {
       if( field.isStored() ) {
         SchemaField sf = schema.getField( field.name() );
         if( !schema.isCopyFieldTarget( sf ) ) {

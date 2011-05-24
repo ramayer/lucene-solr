@@ -17,9 +17,7 @@
 package org.apache.solr.client.solrj.embedded;
 
 import org.apache.solr.client.solrj.LargeVolumeTestBase;
-import org.apache.solr.client.solrj.SolrServer;
-import org.apache.solr.client.solrj.impl.BinaryRequestWriter;
-import org.apache.solr.client.solrj.impl.CommonsHttpSolrServer;
+import org.apache.solr.util.ExternalPaths;
 import org.junit.BeforeClass;
 
 /**
@@ -29,6 +27,6 @@ import org.junit.BeforeClass;
 public class LargeVolumeBinaryJettyTest extends LargeVolumeTestBase {
   @BeforeClass
   public static void beforeTest() throws Exception {
-    createJetty(EXAMPLE_HOME, null, null);
+    createJetty(ExternalPaths.EXAMPLE_HOME, null, null);
   }
 }

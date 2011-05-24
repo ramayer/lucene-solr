@@ -17,8 +17,6 @@ package org.apache.lucene.search;
  * limitations under the License.
  */
 
-import java.util.Random;
-
 import org.apache.lucene.queryParser.QueryParser;
 import org.apache.lucene.queryParser.ParseException;
 import org.apache.lucene.analysis.MockAnalyzer;
@@ -52,15 +50,17 @@ public class TestExplanations extends LuceneTestCase {
   protected IndexSearcher searcher;
   protected IndexReader reader;
   protected Directory directory;
-  protected Random random;
   
   public static final String KEY = "KEY";
+  // boost on this field is the same as the iterator for the doc
   public static final String FIELD = "field";
+  // same contents, but no field boost
+  public static final String ALTFIELD = "alt";
   public static final QueryParser qp =
-    new QueryParser(TEST_VERSION_CURRENT, FIELD, new MockAnalyzer());
+    new QueryParser(TEST_VERSION_CURRENT, FIELD, new MockAnalyzer(random));
 
   @Override
-  protected void tearDown() throws Exception {
+  public void tearDown() throws Exception {
     searcher.close();
     reader.close();
     directory.close();
@@ -68,20 +68,22 @@ public class TestExplanations extends LuceneTestCase {
   }
   
   @Override
-  protected void setUp() throws Exception {
+  public void setUp() throws Exception {
     super.setUp();
-    random = newRandom();
-    directory = newDirectory(random);
-    RandomIndexWriter writer= new RandomIndexWriter(random, directory);
+    directory = newDirectory();
+    RandomIndexWriter writer= new RandomIndexWriter(random, directory, newIndexWriterConfig(TEST_VERSION_CURRENT, new MockAnalyzer(random)).setMergePolicy(newLogMergePolicy()));
     for (int i = 0; i < docFields.length; i++) {
       Document doc = new Document();
-      doc.add(new Field(KEY, ""+i, Field.Store.NO, Field.Index.NOT_ANALYZED));
-      doc.add(new Field(FIELD, docFields[i], Field.Store.NO, Field.Index.ANALYZED));
+      doc.add(newField(KEY, ""+i, Field.Store.NO, Field.Index.NOT_ANALYZED));
+      Field f = newField(FIELD, docFields[i], Field.Store.NO, Field.Index.ANALYZED);
+      f.setBoost(i);
+      doc.add(f);
+      doc.add(newField(ALTFIELD, docFields[i], Field.Store.NO, Field.Index.ANALYZED));
       writer.addDocument(doc);
     }
     reader = writer.getReader();
     writer.close();
-    searcher = new IndexSearcher(reader);
+    searcher = newSearcher(reader);
   }
 
   protected String[] docFields = {
@@ -102,7 +104,7 @@ public class TestExplanations extends LuceneTestCase {
   
   /** check the expDocNrs first, then check the query (and the explanations) */
   public void qtest(Query q, int[] expDocNrs) throws Exception {
-    CheckHits.checkHitCollector(q, FIELD, searcher, expDocNrs);
+    CheckHits.checkHitCollector(random, q, FIELD, searcher, expDocNrs);
   }
 
   /**
@@ -169,7 +171,7 @@ public class TestExplanations extends LuceneTestCase {
   }
   /** MACRO for SpanOrQuery containing two SpanQueries */
   public SpanOrQuery sor(SpanQuery s, SpanQuery e) {
-    return new SpanOrQuery(new SpanQuery[] { s, e });
+    return new SpanOrQuery(s, e);
   }
   
   /** MACRO for SpanOrQuery containing three SpanTerm queries */
@@ -178,7 +180,7 @@ public class TestExplanations extends LuceneTestCase {
   }
   /** MACRO for SpanOrQuery containing two SpanQueries */
   public SpanOrQuery sor(SpanQuery s, SpanQuery m, SpanQuery e) {
-    return new SpanOrQuery(new SpanQuery[] { s, m, e });
+    return new SpanOrQuery(s, m, e);
   }
   
   /** MACRO for SpanNearQuery containing two SpanTerm queries */

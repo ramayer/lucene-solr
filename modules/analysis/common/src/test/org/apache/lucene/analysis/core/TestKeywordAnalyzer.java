@@ -39,7 +39,7 @@ public class TestKeywordAnalyzer extends BaseTokenStreamTestCase {
   private IndexSearcher searcher;
 
   @Override
-  protected void setUp() throws Exception {
+  public void setUp() throws Exception {
     super.setUp();
     directory = new RAMDirectory();
     IndexWriter writer = new IndexWriter(directory, new IndexWriterConfig(
@@ -101,5 +101,10 @@ public class TestKeywordAnalyzer extends BaseTokenStreamTestCase {
     assertTrue(stream.incrementToken());
     assertEquals(0, offsetAtt.startOffset());
     assertEquals(4, offsetAtt.endOffset());
+  }
+  
+  /** blast some random strings through the analyzer */
+  public void testRandomStrings() throws Exception {
+    checkRandomData(random, new KeywordAnalyzer(), 10000*RANDOM_MULTIPLIER);
   }
 }

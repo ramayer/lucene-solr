@@ -17,8 +17,6 @@ package org.apache.lucene.search;
  * limitations under the License.
  */
 
-import java.util.Random;
-
 import org.apache.lucene.util.LuceneTestCase;
 import org.apache.lucene.store.Directory;
 import org.apache.lucene.index.IndexReader;
@@ -33,8 +31,7 @@ import org.apache.lucene.document.Field;
  */
 public class TestPrefixFilter extends LuceneTestCase {
   public void testPrefixFilter() throws Exception {
-    Random random = newRandom();
-    Directory directory = newDirectory(random);
+    Directory directory = newDirectory();
 
     String[] categories = new String[] {"/Computers/Linux",
                                         "/Computers/Mac/One",
@@ -43,7 +40,7 @@ public class TestPrefixFilter extends LuceneTestCase {
     RandomIndexWriter writer = new RandomIndexWriter(random, directory);
     for (int i = 0; i < categories.length; i++) {
       Document doc = new Document();
-      doc.add(new Field("category", categories[i], Field.Store.YES, Field.Index.NOT_ANALYZED));
+      doc.add(newField("category", categories[i], Field.Store.YES, Field.Index.NOT_ANALYZED));
       writer.addDocument(doc);
     }
     IndexReader reader = writer.getReader();
@@ -51,7 +48,7 @@ public class TestPrefixFilter extends LuceneTestCase {
     // PrefixFilter combined with ConstantScoreQuery
     PrefixFilter filter = new PrefixFilter(new Term("category", "/Computers"));
     Query query = new ConstantScoreQuery(filter);
-    IndexSearcher searcher = new IndexSearcher(reader);
+    IndexSearcher searcher = newSearcher(reader);
     ScoreDoc[] hits = searcher.search(query, null, 1000).scoreDocs;
     assertEquals(4, hits.length);
 

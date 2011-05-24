@@ -53,9 +53,9 @@ public class SynonymMap {
     SynonymMap currMap = this;
     for (String str : singleMatch) {
       if (currMap.submap==null) {
-        // for now hardcode at 2.9, as its what the old code did.
+        // for now hardcode at 4.0, as its what the old code did.
         // would be nice to fix, but shouldn't store a version in each submap!!!
-        currMap.submap = new CharArrayMap<SynonymMap>(Version.LUCENE_29, 1, ignoreCase());
+        currMap.submap = new CharArrayMap<SynonymMap>(Version.LUCENE_40, 1, ignoreCase());
       }
 
       SynonymMap map = currMap.submap.get(str);
@@ -73,11 +73,12 @@ public class SynonymMap {
     }
     List<Token> superset = currMap.synonyms==null ? replacement :
           mergeTokens(Arrays.asList(currMap.synonyms), replacement);
-    currMap.synonyms = (Token[])superset.toArray(new Token[superset.size()]);
+    currMap.synonyms = superset.toArray(new Token[superset.size()]);
     if (includeOrig) currMap.flags |= INCLUDE_ORIG;
   }
 
 
+  @Override
   public String toString() {
     StringBuilder sb = new StringBuilder("<");
     if (synonyms!=null) {

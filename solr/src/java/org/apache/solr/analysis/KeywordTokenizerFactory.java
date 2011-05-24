@@ -22,7 +22,14 @@ import org.apache.lucene.analysis.core.KeywordTokenizer;
 import java.io.Reader;
 
 /**
- * @version $Id: LowerCaseTokenizerFactory.java 382610 2006-03-03 01:43:03Z yonik $
+ * Factory for {@link KeywordTokenizer}. 
+ * <pre class="prettyprint" >
+ * &lt;fieldType name="text_keyword" class="solr.TextField" positionIncrementGap="100"&gt;
+ *   &lt;analyzer&gt;
+ *     &lt;tokenizer class="solr.KeywordTokenizerFactory"/&gt;
+ *   &lt;/analyzer&gt;
+ * &lt;/fieldType&gt;</pre> 
+ * @version $Id$
  */
 public class KeywordTokenizerFactory extends BaseTokenizerFactory {
   public KeywordTokenizer create(Reader input) {

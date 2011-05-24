@@ -18,7 +18,9 @@
 package org.apache.solr.search.function;
 
 import org.apache.lucene.index.IndexReader;
+import org.apache.lucene.index.IndexReader.AtomicReaderContext;
 import org.apache.lucene.search.FieldCache;
+import org.apache.lucene.util.ReaderUtil;
 
 import java.io.IOException;
 import java.util.Map;
@@ -51,43 +53,28 @@ public class ReverseOrdFieldSource extends ValueSource {
     this.field = field;
   }
 
+  @Override
   public String description() {
     return "rord("+field+')';
   }
 
-  public DocValues getValues(Map context, IndexReader reader) throws IOException {
-    final FieldCache.DocTermsIndex sindex = FieldCache.DEFAULT.getTermsIndex(reader, field);
+  @Override
+  public DocValues getValues(Map context, AtomicReaderContext readerContext) throws IOException {
+    final IndexReader topReader = ReaderUtil.getTopLevelContext(readerContext).reader;
+    final int off = readerContext.docBase;
 
+    final FieldCache.DocTermsIndex sindex = FieldCache.DEFAULT.getTermsIndex(topReader, field);
     final int end = sindex.numOrd();
 
-    return new DocValues() {
-      public float floatVal(int doc) {
-        return (float)(end - sindex.getOrd(doc));
-      }
-
+    return new IntDocValues(this) {
+     @Override
       public int intVal(int doc) {
-        return (int)(end - sindex.getOrd(doc));
-      }
-
-      public long longVal(int doc) {
-        return (long)(end - sindex.getOrd(doc));
-      }
-
-      public double doubleVal(int doc) {
-        return (double)(end - sindex.getOrd(doc));
-      }
-
-      public String strVal(int doc) {
-        // the string value of the ordinal, not the string itself
-        return Integer.toString((end - sindex.getOrd(doc)));
-      }
-
-      public String toString(int doc) {
-        return description() + '=' + strVal(doc);
+        return (end - sindex.getOrd(doc+off));
       }
     };
   }
 
+  @Override
   public boolean equals(Object o) {
     if (o.getClass() !=  ReverseOrdFieldSource.class) return false;
     ReverseOrdFieldSource other = (ReverseOrdFieldSource)o;
@@ -95,6 +82,7 @@ public class ReverseOrdFieldSource extends ValueSource {
   }
 
   private static final int hcode = ReverseOrdFieldSource.class.hashCode();
+  @Override
   public int hashCode() {
     return hcode + field.hashCode();
   };

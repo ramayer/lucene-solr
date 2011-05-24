@@ -19,6 +19,7 @@ package org.apache.solr.response;
 
 import org.apache.solr.common.util.NamedList;
 import org.apache.solr.common.util.SimpleOrderedMap;
+import org.apache.solr.search.ReturnFields;
 
 import java.util.*;
 
@@ -66,14 +67,15 @@ public class SolrQueryResponse {
    * @see #setAllValues
    * @see <a href="#returnable_data">Note on Returnable Data</a>
    */
-  protected NamedList values = new SimpleOrderedMap();
-
-  /**
+  protected NamedList<Object> values = new SimpleOrderedMap<Object>();
+  
+  
+/**
    * Container for storing information that should be logged by Solr before returning.
    */
-  protected NamedList toLog = new SimpleOrderedMap();
+  protected NamedList<Object> toLog = new SimpleOrderedMap<Object>();
 
-  protected Set<String> defaultReturnFields;
+  protected ReturnFields returnFields;
 
   // error if this is set...
   protected Exception err;
@@ -103,7 +105,7 @@ public class SolrQueryResponse {
    * Sets data to be returned in this response
    * @see <a href="#returnable_data">Note on Returnable Data</a>
    */
-  public void setAllValues(NamedList nameValuePairs) {
+  public void setAllValues(NamedList<Object> nameValuePairs) {
     values=nameValuePairs;
   }
 
@@ -111,18 +113,19 @@ public class SolrQueryResponse {
    * Sets the document field names of fields to return by default when
    * returning DocLists
    */
-  public void setReturnFields(Set<String> fields) {
-    defaultReturnFields=fields;
+  public void setReturnFields(ReturnFields fields) {
+    returnFields=fields;
   }
-  // TODO: should this be represented as a String[] such
-  // that order can be maintained if needed?
 
   /**
    * Gets the document field names of fields to return by default when
    * returning DocLists
    */
-  public Set<String> getReturnFields() {
-    return defaultReturnFields;
+  public ReturnFields getReturnFields() {
+    if( returnFields == null ) {
+      returnFields = new ReturnFields(); // by default return everything
+    }
+    return returnFields;
   }
 
 
@@ -189,7 +192,8 @@ public class SolrQueryResponse {
   }
   
   /** Repsonse header to be logged */ 
-  public NamedList getResponseHeader() {
+  public NamedList<Object> getResponseHeader() {
+    @SuppressWarnings("unchecked")
 	  SimpleOrderedMap<Object> header = (SimpleOrderedMap<Object>) values.get("responseHeader");
 	  return header;
   }
@@ -207,7 +211,7 @@ public class SolrQueryResponse {
    * 
    * @return things to log
    */
-  public NamedList getToLog() {
+  public NamedList<Object> getToLog() {
 	  return toLog;
   }
   

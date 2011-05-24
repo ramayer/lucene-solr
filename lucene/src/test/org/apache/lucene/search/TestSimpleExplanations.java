@@ -17,18 +17,6 @@ package org.apache.lucene.search;
  * limitations under the License.
  */
 
-import org.apache.lucene.analysis.MockAnalyzer;
-import org.apache.lucene.document.Document;
-import org.apache.lucene.document.Field;
-import org.apache.lucene.index.IndexWriter;
-import org.apache.lucene.index.Term;
-import org.apache.lucene.queryParser.QueryParser;
-import org.apache.lucene.search.spans.SpanNearQuery;
-import org.apache.lucene.search.spans.SpanQuery;
-import org.apache.lucene.search.spans.SpanTermQuery;
-import org.apache.lucene.store.Directory;
-
-
 /**
  * TestExplanations subclass focusing on basic query types
  */
@@ -301,73 +289,62 @@ public class TestSimpleExplanations extends TestExplanations {
     qtest(q, new int[] { 0,3 });
     
   }
+
+  /* BQ of TQ: using alt so some fields have zero boost and some don't */
   
-  
-  public void testTermQueryMultiSearcherExplain() throws Exception {
-    // creating two directories for indices
-    Directory indexStoreA = newDirectory(random);
-    Directory indexStoreB = newDirectory(random);
-
-    Document lDoc = new Document();
-    lDoc.add(new Field("handle", "1 2", Field.Store.YES, Field.Index.ANALYZED));
-    Document lDoc2 = new Document();
-    lDoc2.add(new Field("handle", "1 2", Field.Store.YES, Field.Index.ANALYZED));
-    Document lDoc3 = new Document();
-    lDoc3.add(new Field("handle", "1 2", Field.Store.YES, Field.Index.ANALYZED));
-
-    IndexWriter writerA = new IndexWriter(indexStoreA, newIndexWriterConfig(random,
-        TEST_VERSION_CURRENT, new MockAnalyzer()));
-    IndexWriter writerB = new IndexWriter(indexStoreB, newIndexWriterConfig(random,
-        TEST_VERSION_CURRENT, new MockAnalyzer()));
-
-    writerA.addDocument(lDoc);
-    writerA.addDocument(lDoc2);
-    writerA.optimize();
-    writerA.close();
-
-    writerB.addDocument(lDoc3);
-    writerB.close();
-
-    QueryParser parser = new QueryParser(TEST_VERSION_CURRENT, "fulltext", new MockAnalyzer());
-    Query query = parser.parse("handle:1");
-
-    Searcher[] searchers = new Searcher[2];
-    searchers[0] = new IndexSearcher(indexStoreB, true);
-    searchers[1] = new IndexSearcher(indexStoreA, true);
-    Searcher mSearcher = new MultiSearcher(searchers);
-    ScoreDoc[] hits = mSearcher.search(query, null, 1000).scoreDocs;
-
-    assertEquals(3, hits.length);
-
-    Explanation explain = mSearcher.explain(query, hits[0].doc);
-    String exp = explain.toString(0);
-    assertTrue(exp, exp.indexOf("maxDocs=3") > -1);
-    assertTrue(exp, exp.indexOf("docFreq=3") > -1);
-    
-    query = parser.parse("handle:\"1 2\"");
-    hits = mSearcher.search(query, null, 1000).scoreDocs;
-
-    assertEquals(3, hits.length);
-
-    explain = mSearcher.explain(query, hits[0].doc);
-    exp = explain.toString(0);
-    assertTrue(exp, exp.indexOf("1=3") > -1);
-    assertTrue(exp, exp.indexOf("2=3") > -1);
-    
-    query = new SpanNearQuery(new SpanQuery[] {
-        new SpanTermQuery(new Term("handle", "1")),
-        new SpanTermQuery(new Term("handle", "2")) }, 0, true);
-    hits = mSearcher.search(query, null, 1000).scoreDocs;
-
-    assertEquals(3, hits.length);
-
-    explain = mSearcher.explain(query, hits[0].doc);
-    exp = explain.toString(0);
-    assertTrue(exp, exp.indexOf("1=3") > -1);
-    assertTrue(exp, exp.indexOf("2=3") > -1);
-    mSearcher.close();
-    indexStoreA.close();
-    indexStoreB.close();
+  public void testMultiFieldBQ1() throws Exception {
+    qtest("+w1 +alt:w2", new int[] { 0,1,2,3 });
   }
+  public void testMultiFieldBQ2() throws Exception {
+    qtest("+yy +alt:w3", new int[] { 2,3 });
+  }
+  public void testMultiFieldBQ3() throws Exception {
+    qtest("yy +alt:w3", new int[] { 0,1,2,3 });
+  }
+  public void testMultiFieldBQ4() throws Exception {
+    qtest("w1 (-xx alt:w2)", new int[] { 0,1,2,3 });
+  }
+  public void testMultiFieldBQ5() throws Exception {
+    qtest("w1 (+alt:qq alt:w2)", new int[] { 0,1,2,3 });
+  }
+  public void testMultiFieldBQ6() throws Exception {
+    qtest("w1 -(-alt:qq alt:w5)", new int[] { 1,2,3 });
+  }
+  public void testMultiFieldBQ7() throws Exception {
+    qtest("+w1 +(alt:qq (alt:xx -alt:w2) (+alt:w3 +alt:w4))", new int[] { 0 });
+  }
+  public void testMultiFieldBQ8() throws Exception {
+    qtest("+alt:w1 (qq (alt:xx -w2) (+alt:w3 +w4))", new int[] { 0,1,2,3 });
+  }
+  public void testMultiFieldBQ9() throws Exception {
+    qtest("+w1 (alt:qq (-xx w2) -(+alt:w3 +w4))", new int[] { 0,1,2,3 });
+  }
+  public void testMultiFieldBQ10() throws Exception {
+    qtest("+w1 +(alt:qq (-xx alt:w2) -(+alt:w3 +w4))", new int[] { 1 });
+  }
+
+  /* BQ of PQ: using alt so some fields have zero boost and some don't */
   
+  public void testMultiFieldBQofPQ1() throws Exception {
+    qtest("\"w1 w2\" alt:\"w1 w2\"", new int[] { 0 });
+  }
+  public void testMultiFieldBQofPQ2() throws Exception {
+    qtest("\"w1 w3\" alt:\"w1 w3\"", new int[] { 1,3 });
+  }
+  public void testMultiFieldBQofPQ3() throws Exception {
+    qtest("\"w1 w2\"~1 alt:\"w1 w2\"~1", new int[] { 0,1,2 });
+  }
+  public void testMultiFieldBQofPQ4() throws Exception {
+    qtest("\"w2 w3\"~1 alt:\"w2 w3\"~1", new int[] { 0,1,2,3 });
+  }
+  public void testMultiFieldBQofPQ5() throws Exception {
+    qtest("\"w3 w2\"~1 alt:\"w3 w2\"~1", new int[] { 1,3 });
+  }
+  public void testMultiFieldBQofPQ6() throws Exception {
+    qtest("\"w3 w2\"~2 alt:\"w3 w2\"~2", new int[] { 0,1,3 });
+  }
+  public void testMultiFieldBQofPQ7() throws Exception {
+    qtest("\"w3 w2\"~3 alt:\"w3 w2\"~3", new int[] { 0,1,2,3 });
+  }
+
 }

@@ -22,6 +22,7 @@ import org.apache.lucene.analysis.synonym.SynonymFilter;
 import org.apache.lucene.analysis.synonym.SynonymMap;
 import org.apache.lucene.analysis.tokenattributes.CharTermAttribute;
 import org.apache.solr.common.ResourceLoader;
+import org.apache.solr.common.SolrException;
 import org.apache.solr.common.util.StrUtils;
 import org.apache.solr.util.plugin.ResourceLoaderAware;
 
@@ -34,13 +35,23 @@ import java.util.List;
 import java.util.Map;
 
 /**
+ * Factory for {@link SynonymFilter}.
+ * <pre class="prettyprint" >
+ * &lt;fieldType name="text_synonym" class="solr.TextField" positionIncrementGap="100"&gt;
+ *   &lt;analyzer&gt;
+ *     &lt;tokenizer class="solr.WhitespaceTokenizerFactory"/&gt;
+ *     &lt;filter class="solr.SynonymFilterFactory" synonyms="synonyms.txt" ignoreCase="false"
+ *             expand="true" tokenizerFactory="solr.WhitespaceTokenizerFactory"/&gt;
+ *   &lt;/analyzer&gt;
+ * &lt;/fieldType&gt;</pre>
  * @version $Id$
  */
 public class SynonymFilterFactory extends BaseTokenFilterFactory implements ResourceLoaderAware {
 
   public void inform(ResourceLoader loader) {
     String synonyms = args.get("synonyms");
-
+    if (synonyms == null)
+      throw new SolrException(SolrException.ErrorCode.SERVER_ERROR, "Missing required argument 'synonyms'.");
     boolean ignoreCase = getBoolean("ignoreCase", false);
     boolean expand = getBoolean("expand", true);
 
@@ -50,31 +61,38 @@ public class SynonymFilterFactory extends BaseTokenFilterFactory implements Reso
       tokFactory = loadTokenizerFactory( loader, tf, args );
     }
 
-    if (synonyms != null) {
-      List<String> wlist=null;
-      try {
-        File synonymFile = new File(synonyms);
-        if (synonymFile.exists()) {
-          wlist = loader.getLines(synonyms);
-        } else  {
-          List<String> files = StrUtils.splitFileNames(synonyms);
-          wlist = new ArrayList<String>();
-          for (String file : files) {
-            List<String> lines = loader.getLines(file.trim());
-            wlist.addAll(lines);
-          }
+    Iterable<String> wlist=loadRules( synonyms, loader );
+    
+    synMap = new SynonymMap(ignoreCase);
+    parseRules(wlist, synMap, "=>", ",", expand,tokFactory);
+  }
+  
+  /**
+   * @return a list of all rules
+   */
+  protected Iterable<String> loadRules( String synonyms, ResourceLoader loader ) {
+    List<String> wlist=null;
+    try {
+      File synonymFile = new File(synonyms);
+      if (synonymFile.exists()) {
+        wlist = loader.getLines(synonyms);
+      } else  {
+        List<String> files = StrUtils.splitFileNames(synonyms);
+        wlist = new ArrayList<String>();
+        for (String file : files) {
+          List<String> lines = loader.getLines(file.trim());
+          wlist.addAll(lines);
         }
-      } catch (IOException e) {
-        throw new RuntimeException(e);
       }
-      synMap = new SynonymMap(ignoreCase);
-      parseRules(wlist, synMap, "=>", ",", expand,tokFactory);
+    } catch (IOException e) {
+      throw new RuntimeException(e);
     }
+    return wlist;
   }
 
   private SynonymMap synMap;
 
-  static void parseRules(List<String> rules, SynonymMap map, String mappingSep,
+  static void parseRules(Iterable<String> rules, SynonymMap map, String mappingSep,
     String synSep, boolean expansion, TokenizerFactory tokFactory) {
     int count=0;
     for (String rule : rules) {

@@ -19,6 +19,7 @@ package org.apache.lucene.index;
 
 
 import java.io.IOException;
+import java.util.Collections;
 import java.util.Set;
 
 /**
@@ -56,7 +57,7 @@ public class BalancedSegmentMergePolicy extends LogByteSizeMergePolicy {
   
   @Override
   protected long size(SegmentInfo info) throws IOException {
-    long byteSize = info.sizeInBytes();
+    long byteSize = info.sizeInBytes(true);
     float delRatio = (info.docCount <= 0 ? 0.0f : ((float)info.getDelCount() / (float)info.docCount));
     return (info.docCount <= 0 ?  byteSize : (long)((1.0f - delRatio) * byteSize));
   }
@@ -103,31 +104,6 @@ public class BalancedSegmentMergePolicy extends LogByteSizeMergePolicy {
     }
   }
   
-  private boolean isOptimized(SegmentInfos infos, IndexWriter writer, int maxNumSegments, Set<SegmentInfo> segmentsToOptimize) throws IOException {
-    final int numSegments = infos.size();
-    int numToOptimize = 0;
-    SegmentInfo optimizeInfo = null;
-    for(int i=0;i<numSegments && numToOptimize <= maxNumSegments;i++) {
-      final SegmentInfo info = infos.info(i);
-      if (segmentsToOptimize.contains(info)) {
-        numToOptimize++;
-        optimizeInfo = info;
-      }
-    }
-
-    return numToOptimize <= maxNumSegments &&
-      (numToOptimize != 1 || isOptimized(writer, optimizeInfo));
-  }
-  
-  private boolean isOptimized(IndexWriter writer, SegmentInfo info)
-    throws IOException {
-    assert writer != null;
-    return !info.hasDeletions() &&
-      !info.hasSeparateNorms() &&
-      info.dir == writer.getDirectory() &&
-      info.getUseCompoundFile() == getUseCompoundFile();
-  }
-
   @Override
   public MergeSpecification findMergesForOptimize(SegmentInfos infos, int maxNumSegments, Set<SegmentInfo> segmentsToOptimize) throws IOException {
     
@@ -135,7 +111,7 @@ public class BalancedSegmentMergePolicy extends LogByteSizeMergePolicy {
 
     MergeSpecification spec = null;
 
-    if (!isOptimized(infos, writer.get(), maxNumSegments, segmentsToOptimize)) {
+    if (!isOptimized(infos, maxNumSegments, segmentsToOptimize)) {
 
       // Find the newest (rightmost) segment that needs to
       // be optimized (other segments may have been flushed
@@ -157,11 +133,10 @@ public class BalancedSegmentMergePolicy extends LogByteSizeMergePolicy {
 
           // Since we must optimize down to 1 segment, the
           // choice is simple:
-          boolean useCompoundFile = getUseCompoundFile();
-          if (last > 1 || !isOptimized(writer.get(), infos.info(0))) {
+          if (last > 1 || !isOptimized(infos.info(0))) {
 
             spec = new MergeSpecification();
-            spec.add(new OneMerge(infos.range(0, last), useCompoundFile));
+            spec.add(new OneMerge(infos.asList().subList(0, last)));
           }
         } else if (last > maxNumSegments) {
 
@@ -178,7 +153,6 @@ public class BalancedSegmentMergePolicy extends LogByteSizeMergePolicy {
     if (infoLen <= maxNumSegments) return null;
     
     MergeSpecification spec = new MergeSpecification();
-    boolean useCompoundFile = getUseCompoundFile();
 
     // use Viterbi algorithm to find the best segmentation.
     // we will try to minimize the size variance of resulting segments.
@@ -219,7 +193,7 @@ public class BalancedSegmentMergePolicy extends LogByteSizeMergePolicy {
       prev = backLink[i][prev];
       int mergeStart = i + prev;
       if((mergeEnd - mergeStart) > 1) {
-        spec.add(new OneMerge(infos.range(mergeStart, mergeEnd), useCompoundFile));
+        spec.add(new OneMerge(infos.asList().subList(mergeStart, mergeEnd)));
       } else {
         if(partialExpunge) {
           SegmentInfo info = infos.info(mergeStart);
@@ -235,7 +209,7 @@ public class BalancedSegmentMergePolicy extends LogByteSizeMergePolicy {
     
     if(partialExpunge && maxDelCount > 0) {
       // expunge deletes
-      spec.add(new OneMerge(infos.range(expungeCandidate, expungeCandidate + 1), useCompoundFile));
+      spec.add(new OneMerge(Collections.singletonList(infos.info(expungeCandidate))));
     }
     
     return spec;
@@ -277,7 +251,10 @@ public class BalancedSegmentMergePolicy extends LogByteSizeMergePolicy {
     MergeSpecification spec = null;
     
     if(numLargeSegs < numSegs) {
-      SegmentInfos smallSegments = infos.range(numLargeSegs, numSegs);
+      // hack to create a shallow sub-range as SegmentInfos instance,
+      // it does not clone all metadata, but LogMerge does not need it
+      final SegmentInfos smallSegments = new SegmentInfos();
+      smallSegments.rollbackSegmentInfos(infos.asList().subList(numLargeSegs, numSegs));
       spec = super.findMergesToExpungeDeletes(smallSegments);
     }
     
@@ -285,7 +262,7 @@ public class BalancedSegmentMergePolicy extends LogByteSizeMergePolicy {
     for(int i = 0; i < numLargeSegs; i++) {
       SegmentInfo info = infos.info(i);
       if(info.hasDeletions()) {
-        spec.add(new OneMerge(infos.range(i, i + 1), getUseCompoundFile()));        
+        spec.add(new OneMerge(Collections.singletonList(infos.info(i))));
       }
     }
     return spec;
@@ -323,7 +300,7 @@ public class BalancedSegmentMergePolicy extends LogByteSizeMergePolicy {
       if(totalSmallSegSize < targetSegSize * 2) {
         MergeSpecification spec = findBalancedMerges(infos, numLargeSegs, (numLargeSegs - 1), _partialExpunge);
         if(spec == null) spec = new MergeSpecification(); // should not happen
-        spec.add(new OneMerge(infos.range(numLargeSegs, numSegs), getUseCompoundFile()));
+        spec.add(new OneMerge(infos.asList().subList(numLargeSegs, numSegs)));
         return spec;
       } else {
         return findBalancedMerges(infos, numSegs, numLargeSegs, _partialExpunge);
@@ -338,11 +315,13 @@ public class BalancedSegmentMergePolicy extends LogByteSizeMergePolicy {
         if(size(info) < sizeThreshold) break;
         startSeg++;
       }
-      spec.add(new OneMerge(infos.range(startSeg, numSegs), getUseCompoundFile()));
+      spec.add(new OneMerge(infos.asList().subList(startSeg, numSegs)));
       return spec;
     } else {
-      // apply the log merge policy to small segments.
-      SegmentInfos smallSegments = infos.range(numLargeSegs, numSegs);
+      // hack to create a shallow sub-range as SegmentInfos instance,
+      // it does not clone all metadata, but LogMerge does not need it
+      final SegmentInfos smallSegments = new SegmentInfos();
+      smallSegments.rollbackSegmentInfos(infos.asList().subList(numLargeSegs, numSegs));
       MergeSpecification spec = super.findMerges(smallSegments);
       
       if(_partialExpunge) {
@@ -369,7 +348,7 @@ public class BalancedSegmentMergePolicy extends LogByteSizeMergePolicy {
       }
     }
     if (maxDelCount > 0) {
-      return new OneMerge(infos.range(expungeCandidate, expungeCandidate + 1), getUseCompoundFile());
+      return new OneMerge(Collections.singletonList(infos.info(expungeCandidate)));
     }
     return null;
   }

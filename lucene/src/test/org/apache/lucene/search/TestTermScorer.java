@@ -20,16 +20,18 @@ package org.apache.lucene.search;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Random;
 
-import org.apache.lucene.util.LuceneTestCase;
+import org.apache.lucene.analysis.MockAnalyzer;
 import org.apache.lucene.document.Document;
 import org.apache.lucene.document.Field;
+import org.apache.lucene.index.IndexReader.AtomicReaderContext;
 import org.apache.lucene.index.IndexReader;
 import org.apache.lucene.index.RandomIndexWriter;
-import org.apache.lucene.index.Term;
 import org.apache.lucene.index.SlowMultiReaderWrapper;
+import org.apache.lucene.index.Term;
+import org.apache.lucene.search.Weight.ScorerContext;
 import org.apache.lucene.store.Directory;
+import org.apache.lucene.util.LuceneTestCase;
 
 public class TestTermScorer extends LuceneTestCase {
   protected Directory directory;
@@ -40,34 +42,30 @@ public class TestTermScorer extends LuceneTestCase {
   protected IndexSearcher indexSearcher;
   protected IndexReader indexReader;
   
-  public TestTermScorer(String s) {
-    super(s);
-  }
-  
   @Override
-  protected void setUp() throws Exception {
+  public void setUp() throws Exception {
     super.setUp();
-    Random random = newRandom();
-    directory = newDirectory(random);
+    directory = newDirectory();
     
-    RandomIndexWriter writer = new RandomIndexWriter(random, directory);
+    RandomIndexWriter writer = new RandomIndexWriter(random, directory, newIndexWriterConfig(TEST_VERSION_CURRENT, new MockAnalyzer(random)).setMergePolicy(newLogMergePolicy()));
     for (int i = 0; i < values.length; i++) {
       Document doc = new Document();
       doc
-          .add(new Field(FIELD, values[i], Field.Store.YES,
+          .add(newField(FIELD, values[i], Field.Store.YES,
               Field.Index.ANALYZED));
       writer.addDocument(doc);
     }
-    indexReader = writer.getReader();
+    indexReader = new SlowMultiReaderWrapper(writer.getReader());
     writer.close();
-    indexSearcher = new IndexSearcher(SlowMultiReaderWrapper.wrap(indexReader));
+    indexSearcher = newSearcher(indexReader);
   }
   
   @Override
-  protected void tearDown() throws Exception {
+  public void tearDown() throws Exception {
     indexSearcher.close();
     indexReader.close();
     directory.close();
+    super.tearDown();
   }
 
   public void test() throws IOException {
@@ -76,8 +74,8 @@ public class TestTermScorer extends LuceneTestCase {
     TermQuery termQuery = new TermQuery(allTerm);
     
     Weight weight = termQuery.weight(indexSearcher);
-    
-    Scorer ts = weight.scorer(indexSearcher.getIndexReader(), true, true);
+    assertTrue(indexSearcher.getTopReaderContext().isAtomic);
+    Scorer ts = weight.scorer((AtomicReaderContext)indexSearcher.getTopReaderContext(), ScorerContext.def().scoreDocsInOrder(true).topScorer(true));
     // we have 2 documents with the term all in them, one document for all the
     // other values
     final List<TestHit> docs = new ArrayList<TestHit>();
@@ -103,8 +101,8 @@ public class TestTermScorer extends LuceneTestCase {
       }
       
       @Override
-      public void setNextReader(IndexReader reader, int docBase) {
-        base = docBase;
+      public void setNextReader(AtomicReaderContext context) {
+        base = context.docBase;
       }
       
       @Override
@@ -137,8 +135,8 @@ public class TestTermScorer extends LuceneTestCase {
     TermQuery termQuery = new TermQuery(allTerm);
     
     Weight weight = termQuery.weight(indexSearcher);
-    
-    Scorer ts = weight.scorer(indexSearcher.getIndexReader(), true, true);
+    assertTrue(indexSearcher.getTopReaderContext().isAtomic);
+    Scorer ts = weight.scorer((AtomicReaderContext) indexSearcher.getTopReaderContext(), ScorerContext.def().scoreDocsInOrder(true).topScorer(true));
     assertTrue("next did not return a doc",
         ts.nextDoc() != DocIdSetIterator.NO_MORE_DOCS);
     assertTrue("score is not correct", ts.score() == 1.6931472f);
@@ -155,8 +153,9 @@ public class TestTermScorer extends LuceneTestCase {
     TermQuery termQuery = new TermQuery(allTerm);
     
     Weight weight = termQuery.weight(indexSearcher);
-    
-    Scorer ts = weight.scorer(indexSearcher.getIndexReader(), true, true);
+    assertTrue(indexSearcher.getTopReaderContext().isAtomic);
+
+    Scorer ts = weight.scorer((AtomicReaderContext) indexSearcher.getTopReaderContext(), ScorerContext.def().scoreDocsInOrder(true).topScorer(true));
     assertTrue("Didn't skip", ts.advance(3) != DocIdSetIterator.NO_MORE_DOCS);
     // The next doc should be doc 5
     assertTrue("doc should be number 5", ts.docID() == 5);

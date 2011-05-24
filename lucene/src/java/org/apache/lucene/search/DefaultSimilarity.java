@@ -31,27 +31,15 @@ public class DefaultSimilarity extends Similarity {
    *
    *  @lucene.experimental */
   @Override
-  public float computeNorm(String field, FieldInvertState state) {
+  public float computeNorm(FieldInvertState state) {
     final int numTerms;
     if (discountOverlaps)
       numTerms = state.getLength() - state.getNumOverlap();
     else
       numTerms = state.getLength();
-    return (state.getBoost() * lengthNorm(field, numTerms));
+    return state.getBoost() * ((float) (1.0 / Math.sqrt(numTerms)));
   }
   
-  /** Implemented as <code>1/sqrt(numTerms)</code>. */
-  @Override
-  public float lengthNorm(String fieldName, int numTerms) {
-    return (float)(1.0 / Math.sqrt(numTerms));
-  }
-  
-  /** Implemented as <code>1/sqrt(sumOfSquaredWeights)</code>. */
-  @Override
-  public float queryNorm(float sumOfSquaredWeights) {
-    return (float)(1.0 / Math.sqrt(sumOfSquaredWeights));
-  }
-
   /** Implemented as <code>sqrt(freq)</code>. */
   @Override
   public float tf(float freq) {
@@ -70,12 +58,6 @@ public class DefaultSimilarity extends Similarity {
     return (float)(Math.log(numDocs/(double)(docFreq+1)) + 1.0);
   }
     
-  /** Implemented as <code>overlap / maxOverlap</code>. */
-  @Override
-  public float coord(int overlap, int maxOverlap) {
-    return overlap / (float)maxOverlap;
-  }
-
   // Default true
   protected boolean discountOverlaps = true;
 

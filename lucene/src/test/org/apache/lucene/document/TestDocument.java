@@ -1,14 +1,11 @@
 package org.apache.lucene.document;
 
-import java.util.Random;
-
 import org.apache.lucene.index.IndexReader;
 import org.apache.lucene.index.RandomIndexWriter;
 import org.apache.lucene.index.Term;
 import org.apache.lucene.search.IndexSearcher;
 import org.apache.lucene.search.Query;
 import org.apache.lucene.search.ScoreDoc;
-import org.apache.lucene.search.Searcher;
 import org.apache.lucene.search.TermQuery;
 import org.apache.lucene.store.Directory;
 import org.apache.lucene.util.LuceneTestCase;
@@ -154,13 +151,12 @@ public class TestDocument extends LuceneTestCase {
    * @throws Exception on error
    */
   public void testGetValuesForIndexedDocument() throws Exception {
-    Random random = newRandom();
-    Directory dir = newDirectory(random);
+    Directory dir = newDirectory();
     RandomIndexWriter writer = new RandomIndexWriter(random, dir);
     writer.addDocument(makeDocumentWithFields());
     IndexReader reader = writer.getReader();
     
-    Searcher searcher = new IndexSearcher(reader);
+    IndexSearcher searcher = newSearcher(reader);
     
     // search for something that does exists
     Query query = new TermQuery(new Term("keyword", "test1"));
@@ -233,8 +229,7 @@ public class TestDocument extends LuceneTestCase {
     doc.add(new Field("keyword", "test", Field.Store.YES,
         Field.Index.NOT_ANALYZED));
     
-    Random random = newRandom();
-    Directory dir = newDirectory(random);
+    Directory dir = newDirectory();
     RandomIndexWriter writer = new RandomIndexWriter(random, dir);
     writer.addDocument(doc);
     field.setValue("id2");
@@ -243,7 +238,7 @@ public class TestDocument extends LuceneTestCase {
     writer.addDocument(doc);
     
     IndexReader reader = writer.getReader();
-    Searcher searcher = new IndexSearcher(reader);
+    IndexSearcher searcher = newSearcher(reader);
     
     Query query = new TermQuery(new Term("keyword", "test"));
     

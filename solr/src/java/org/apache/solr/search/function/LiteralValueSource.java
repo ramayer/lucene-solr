@@ -16,20 +16,24 @@ package org.apache.solr.search.function;
  * limitations under the License.
  */
 
-import org.apache.lucene.index.IndexReader;
+import org.apache.lucene.index.IndexReader.AtomicReaderContext;
+import org.apache.lucene.util.BytesRef;
 
 import java.util.Map;
 import java.io.IOException;
 
 
 /**
- * Pass a the field value through as a String, no matter the type
+ * Pass a the field value through as a String, no matter the type // Q: doesn't this mean it's a "string"?
  *
  **/
 public class LiteralValueSource extends ValueSource {
   protected final String string;
+  protected final BytesRef bytesRef;
+
   public LiteralValueSource(String string) {
     this.string = string;
+    this.bytesRef = new BytesRef(string);
   }
 
   /** returns the literal value */
@@ -38,12 +42,18 @@ public class LiteralValueSource extends ValueSource {
   }
 
   @Override
-  public DocValues getValues(Map context, IndexReader reader) throws IOException {
+  public DocValues getValues(Map context, AtomicReaderContext readerContext) throws IOException {
 
-    return new DocValues() {
+    return new StrDocValues(this) {
       @Override
       public String strVal(int doc) {
         return string;
+      }
+
+      @Override
+      public boolean bytesVal(int doc, BytesRef target) {
+        target.copy(bytesRef);
+        return true;
       }
 
       @Override

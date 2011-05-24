@@ -18,37 +18,48 @@ package org.apache.lucene.search;
  */
 
 import java.io.IOException;
-import java.util.Random;
 
-import org.apache.lucene.index.IndexReader;
-import org.apache.lucene.index.RandomIndexWriter;
-import org.apache.lucene.index.Term;
-import org.apache.lucene.search.spans.SpanTermQuery;
+import org.apache.lucene.analysis.MockAnalyzer;
 import org.apache.lucene.document.Document;
 import org.apache.lucene.document.Field;
+import org.apache.lucene.index.IndexReader;
+import org.apache.lucene.index.RandomIndexWriter;
+import org.apache.lucene.index.SerialMergeScheduler;
+import org.apache.lucene.index.Term;
+import org.apache.lucene.search.spans.SpanTermQuery;
 import org.apache.lucene.store.Directory;
 import org.apache.lucene.util.LuceneTestCase;
+import org.apache.lucene.util._TestUtil;
 
 public class TestCachingSpanFilter extends LuceneTestCase {
 
   public void testEnforceDeletions() throws Exception {
-    Random random = newRandom();
-    Directory dir = newDirectory(random);
-    RandomIndexWriter writer = new RandomIndexWriter(random, dir);
+    Directory dir = newDirectory();
+    RandomIndexWriter writer = new RandomIndexWriter(
+        random,
+        dir,
+        newIndexWriterConfig(random, TEST_VERSION_CURRENT, new MockAnalyzer(random)).
+            setMergeScheduler(new SerialMergeScheduler()).
+            // asserts below requires no unexpected merges:
+            setMergePolicy(newLogMergePolicy(10))
+    );
+
     // NOTE: cannot use writer.getReader because RIW (on
     // flipping a coin) may give us a newly opened reader,
     // but we use .reopen on this reader below and expect to
     // (must) get an NRT reader:
-    IndexReader reader = writer.w.getReader();
-    IndexSearcher searcher = new IndexSearcher(reader);
+    IndexReader reader = IndexReader.open(writer.w, true);
+    // same reason we don't wrap?
+    IndexSearcher searcher = newSearcher(reader, false);
 
     // add a doc, refresh the reader, and check that its there
     Document doc = new Document();
-    doc.add(new Field("id", "1", Field.Store.YES, Field.Index.NOT_ANALYZED));
+    doc.add(newField("id", "1", Field.Store.YES, Field.Index.NOT_ANALYZED));
     writer.addDocument(doc);
 
     reader = refreshReader(reader);
-    searcher = new IndexSearcher(reader);
+    searcher.close();
+    searcher = newSearcher(reader, false);
 
     TopDocs docs = searcher.search(new MatchAllDocsQuery(), 1);
     assertEquals("Should find a hit...", 1, docs.totalHits);
@@ -64,11 +75,14 @@ public class TestCachingSpanFilter extends LuceneTestCase {
     docs = searcher.search(constantScore, 1);
     assertEquals("[just filter] Should find a hit...", 1, docs.totalHits);
 
-    // now delete the doc, refresh the reader, and see that it's not there
+    // now delete the doc, refresh the reader, and see that
+    // it's not there
+    _TestUtil.keepFullyDeletedSegments(writer.w);
     writer.deleteDocuments(new Term("id", "1"));
 
     reader = refreshReader(reader);
-    searcher = new IndexSearcher(reader);
+    searcher.close();
+    searcher = newSearcher(reader, false);
 
     docs = searcher.search(new MatchAllDocsQuery(), filter, 1);
     assertEquals("[query + filter] Should *not* find a hit...", 0, docs.totalHits);
@@ -82,7 +96,8 @@ public class TestCachingSpanFilter extends LuceneTestCase {
 
     writer.addDocument(doc);
     reader = refreshReader(reader);
-    searcher = new IndexSearcher(reader);
+    searcher.close();
+    searcher = newSearcher(reader, false);
         
     docs = searcher.search(new MatchAllDocsQuery(), filter, 1);
     assertEquals("[query + filter] Should find a hit...", 1, docs.totalHits);
@@ -91,12 +106,17 @@ public class TestCachingSpanFilter extends LuceneTestCase {
     docs = searcher.search(constantScore, 1);
     assertEquals("[just filter] Should find a hit...", 1, docs.totalHits);
 
+    // NOTE: important to hold ref here so GC doesn't clear
+    // the cache entry!  Else the assert below may sometimes
+    // fail:
+    IndexReader oldReader = reader;
+
     // make sure we get a cache hit when we reopen readers
     // that had no new deletions
-    IndexReader newReader = refreshReader(reader);
-    assertTrue(reader != newReader);
-    reader = newReader;
-    searcher = new IndexSearcher(reader);
+    reader = refreshReader(reader);
+    assertTrue(reader != oldReader);
+    searcher.close();
+    searcher = newSearcher(reader, false);
     int missCount = filter.missCount;
     docs = searcher.search(constantScore, 1);
     assertEquals("[just filter] Should find a hit...", 1, docs.totalHits);
@@ -106,13 +126,22 @@ public class TestCachingSpanFilter extends LuceneTestCase {
     writer.deleteDocuments(new Term("id", "1"));
 
     reader = refreshReader(reader);
-    searcher = new IndexSearcher(reader);
+    searcher.close();
+    searcher = newSearcher(reader, false);
 
     docs = searcher.search(new MatchAllDocsQuery(), filter, 1);
     assertEquals("[query + filter] Should *not* find a hit...", 0, docs.totalHits);
 
     docs = searcher.search(constantScore, 1);
     assertEquals("[just filter] Should *not* find a hit...", 0, docs.totalHits);
+
+    // NOTE: silliness to make sure JRE does not optimize
+    // away our holding onto oldReader to prevent
+    // CachingWrapperFilter's WeakHashMap from dropping the
+    // entry:
+    assertTrue(oldReader != null);
+
+    searcher.close();
     writer.close();
     reader.close();
     dir.close();

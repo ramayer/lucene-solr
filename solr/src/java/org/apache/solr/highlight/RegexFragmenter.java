@@ -54,6 +54,7 @@ public class RegexFragmenter extends HighlightingPluginBase implements SolrFragm
   protected String defaultPatternRaw;
   protected Pattern defaultPattern;
 
+  @Override
   public void init(NamedList args) {
     super.init(args);
     defaultPatternRaw = LuceneRegexFragmenter.DEFAULT_PATTERN_RAW;
@@ -202,8 +203,8 @@ class LuceneRegexFragmenter implements Fragmenter
     currentNumFrags = 1;
     currentOffset = 0;
     addHotSpots(originalText);
-    posIncAtt = (PositionIncrementAttribute) tokenStream.getAttribute(PositionIncrementAttribute.class);
-    offsetAtt = (OffsetAttribute) tokenStream.getAttribute(OffsetAttribute.class);
+    posIncAtt = tokenStream.getAttribute(PositionIncrementAttribute.class);
+    offsetAtt = tokenStream.getAttribute(OffsetAttribute.class);
   }
 
   ////////////////////////////////////

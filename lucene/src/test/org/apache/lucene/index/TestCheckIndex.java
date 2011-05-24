@@ -22,7 +22,6 @@ import java.io.ByteArrayOutputStream;
 import java.io.PrintStream;
 import java.util.List;
 import java.util.ArrayList;
-import java.util.Random;
 
 import org.apache.lucene.util.LuceneTestCase;
 import org.apache.lucene.store.Directory;
@@ -34,11 +33,10 @@ import org.apache.lucene.util.Constants;
 public class TestCheckIndex extends LuceneTestCase {
 
   public void testDeletedDocs() throws IOException {
-    Random random = newRandom();
-    Directory dir = newDirectory(random);
-    IndexWriter writer  = new IndexWriter(dir, newIndexWriterConfig(random, TEST_VERSION_CURRENT, new MockAnalyzer()).setMaxBufferedDocs(2));
+    Directory dir = newDirectory();
+    IndexWriter writer  = new IndexWriter(dir, newIndexWriterConfig(TEST_VERSION_CURRENT, new MockAnalyzer(random)).setMaxBufferedDocs(2));
     Document doc = new Document();
-    doc.add(new Field("field", "aaa", Field.Store.YES, Field.Index.ANALYZED, Field.TermVector.WITH_POSITIONS_OFFSETS));
+    doc.add(newField("field", "aaa", Field.Store.YES, Field.Index.ANALYZED, Field.TermVector.WITH_POSITIONS_OFFSETS));
     for(int i=0;i<19;i++) {
       writer.addDocument(doc);
     }
@@ -95,9 +93,11 @@ public class TestCheckIndex extends LuceneTestCase {
   public void testLuceneConstantVersion() throws IOException {
     // common-build.xml sets lucene.version
     final String version = System.getProperty("lucene.version");
-    assertNotNull(version);
-    assertTrue(version.equals(Constants.LUCENE_MAIN_VERSION+"-dev") ||
+    assertNotNull( "null version", version);
+    assertTrue("Invalid version: "+version,
+               version.equals(Constants.LUCENE_MAIN_VERSION+"-SNAPSHOT") ||
                version.equals(Constants.LUCENE_MAIN_VERSION));
-    assertTrue(Constants.LUCENE_VERSION.startsWith(version));
+    assertTrue(version + " should start with: "+Constants.LUCENE_VERSION,
+               Constants.LUCENE_VERSION.startsWith(version));
   }
 }

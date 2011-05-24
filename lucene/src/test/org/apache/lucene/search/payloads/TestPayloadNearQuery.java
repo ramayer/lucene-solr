@@ -18,7 +18,6 @@ package org.apache.lucene.search.payloads;
 import java.io.IOException;
 import java.io.Reader;
 import java.util.Collection;
-import java.util.Random;
 
 import org.apache.lucene.analysis.Analyzer;
 import org.apache.lucene.analysis.MockTokenizer;
@@ -27,17 +26,18 @@ import org.apache.lucene.analysis.TokenStream;
 import org.apache.lucene.analysis.tokenattributes.PayloadAttribute;
 import org.apache.lucene.document.Document;
 import org.apache.lucene.document.Field;
+import org.apache.lucene.index.FieldInvertState;
 import org.apache.lucene.index.IndexReader;
 import org.apache.lucene.index.Payload;
 import org.apache.lucene.index.RandomIndexWriter;
 import org.apache.lucene.index.Term;
 import org.apache.lucene.search.DefaultSimilarity;
 import org.apache.lucene.search.Explanation;
-import org.apache.lucene.search.IndexSearcher;
-import org.apache.lucene.search.Query;
 import org.apache.lucene.search.QueryUtils;
 import org.apache.lucene.search.ScoreDoc;
-import org.apache.lucene.search.Searcher;
+import org.apache.lucene.search.IndexSearcher;
+import org.apache.lucene.search.Similarity;
+import org.apache.lucene.search.SimilarityProvider;
 import org.apache.lucene.search.TopDocs;
 import org.apache.lucene.search.spans.SpanQuery;
 import org.apache.lucene.search.spans.SpanNearQuery;
@@ -52,13 +52,9 @@ public class TestPayloadNearQuery extends LuceneTestCase {
   private IndexSearcher searcher;
   private IndexReader reader;
   private Directory directory;
-  private BoostingSimilarity similarity = new BoostingSimilarity();
+  private BoostingSimilarityProvider similarityProvider = new BoostingSimilarityProvider();
   private byte[] payload2 = new byte[]{2};
   private byte[] payload4 = new byte[]{4};
-
-  public TestPayloadNearQuery(String s) {
-    super(s);
-  }
 
   private class PayloadAnalyzer extends Analyzer {
     @Override
@@ -77,7 +73,7 @@ public class TestPayloadNearQuery extends LuceneTestCase {
     public PayloadFilter(TokenStream input, String fieldName) {
       super(input);
       this.fieldName = fieldName;
-      payAtt = (PayloadAttribute) addAttribute(PayloadAttribute.class);
+      payAtt = addAttribute(PayloadAttribute.class);
     }
 
     @Override
@@ -106,30 +102,29 @@ public class TestPayloadNearQuery extends LuceneTestCase {
   }
 
   @Override
-  protected void setUp() throws Exception {
+  public void setUp() throws Exception {
     super.setUp();
-    Random random = newRandom();
-    directory = newDirectory(random);
+    directory = newDirectory();
     RandomIndexWriter writer = new RandomIndexWriter(random, directory, 
-        newIndexWriterConfig(random, TEST_VERSION_CURRENT, new PayloadAnalyzer())
-        .setSimilarity(similarity));
+        newIndexWriterConfig(TEST_VERSION_CURRENT, new PayloadAnalyzer())
+        .setSimilarityProvider(similarityProvider));
     //writer.infoStream = System.out;
     for (int i = 0; i < 1000; i++) {
       Document doc = new Document();
-      doc.add(new Field("field", English.intToEnglish(i), Field.Store.YES, Field.Index.ANALYZED));
+      doc.add(newField("field", English.intToEnglish(i), Field.Store.YES, Field.Index.ANALYZED));
       String txt = English.intToEnglish(i) +' '+English.intToEnglish(i+1);
-      doc.add(new Field("field2",  txt, Field.Store.YES, Field.Index.ANALYZED));
+      doc.add(newField("field2",  txt, Field.Store.YES, Field.Index.ANALYZED));
       writer.addDocument(doc);
     }
     reader = writer.getReader();
     writer.close();
 
-    searcher = new IndexSearcher(reader);
-    searcher.setSimilarity(similarity);
+    searcher = newSearcher(reader);
+    searcher.setSimilarityProvider(similarityProvider);
   }
 
   @Override
-  protected void tearDown() throws Exception {
+  public void tearDown() throws Exception {
     searcher.close();
     reader.close();
     directory.close();
@@ -304,43 +299,57 @@ public class TestPayloadNearQuery extends LuceneTestCase {
   }
 
   // must be static for weight serialization tests 
-  static class BoostingSimilarity extends DefaultSimilarity {
+  static class BoostingSimilarityProvider implements SimilarityProvider {
 
-    @Override public float scorePayload(int docId, String fieldName, int start, int end, byte[] payload, int offset, int length) {
-      //we know it is size 4 here, so ignore the offset/length
-      return payload[0];
-    }
-    //!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-    //Make everything else 1 so we see the effect of the payload
-    //!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-    @Override public float lengthNorm(String fieldName, int numTerms) {
+    public float queryNorm(float sumOfSquaredWeights) {
       return 1.0f;
     }
+    
+    public float coord(int overlap, int maxOverlap) {
+      return 1.0f;
+    }
+    
+    public Similarity get(String field) {
+      return new DefaultSimilarity() {
+    
+        @Override 
+        public float scorePayload(int docId, int start, int end, byte[] payload, int offset, int length) {
+          //we know it is size 4 here, so ignore the offset/length
+          return payload[offset];
+        }
+    
+        //!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+        //Make everything else 1 so we see the effect of the payload
+        //!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+        @Override 
+        public float computeNorm(FieldInvertState state) {
+          return state.getBoost();
+        }
 
-    @Override public float queryNorm(float sumOfSquaredWeights) {
-      return 1.0f;
-    }
-
-    @Override public float sloppyFreq(int distance) {
-      return 1.0f;
-    }
-
-    @Override public float coord(int overlap, int maxOverlap) {
-      return 1.0f;
-    }
-    @Override public float tf(float freq) {
-      return 1.0f;
-    }
-    // idf used for phrase queries
-    @Override public IDFExplanation idfExplain(Collection<Term> terms, Searcher searcher) throws IOException {
-      return new IDFExplanation() {
-        @Override
-        public float getIdf() {
+        @Override 
+        public float sloppyFreq(int distance) {
           return 1.0f;
         }
-        @Override
-        public String explain() {
-          return "Inexplicable";
+
+        @Override 
+        public float tf(float freq) {
+          return 1.0f;
+        }
+    
+        // idf used for phrase queries
+        @Override 
+        public IDFExplanation idfExplain(Collection<Term> terms, IndexSearcher searcher) throws IOException {
+          return new IDFExplanation() {
+            @Override
+            public float getIdf() {
+              return 1.0f;
+            }
+        
+            @Override
+            public String explain() {
+              return "Inexplicable";
+            }
+          };
         }
       };
     }

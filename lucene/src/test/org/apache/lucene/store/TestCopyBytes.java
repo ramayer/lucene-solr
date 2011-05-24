@@ -18,15 +18,12 @@ package org.apache.lucene.store;
  */
 
 
-import java.io.IOException;
-import java.util.Random;
-import org.apache.lucene.util.LuceneTestCaseJ4;
+import org.apache.lucene.util.LuceneTestCase;
 import org.apache.lucene.util._TestUtil;
 
 import org.junit.Test;
-import static org.junit.Assert.*;
 
-public class TestCopyBytes extends LuceneTestCaseJ4 {
+public class TestCopyBytes extends LuceneTestCase {
 
   private byte value(int idx) {
     return (byte) ((idx%256) * (1+(idx/256)));
@@ -35,17 +32,16 @@ public class TestCopyBytes extends LuceneTestCaseJ4 {
 
   @Test
   public void testCopyBytes() throws Exception {
-    Random rand = newRandom();
     for(int iter=0;iter<10*RANDOM_MULTIPLIER;iter++) {
-      Directory dir = newDirectory(rand);
+      Directory dir = newDirectory();
       if (VERBOSE) {
         System.out.println("TEST: iter=" + iter + " dir=" + dir);
       }
 
       // make random file
       IndexOutput out = dir.createOutput("test");
-      byte[] bytes = new byte[_TestUtil.nextInt(rand, 1, 77777)];
-      final int size = _TestUtil.nextInt(rand, 1, 1777777);
+      byte[] bytes = new byte[_TestUtil.nextInt(random, 1, 77777)];
+      final int size = _TestUtil.nextInt(random, 1, 1777777);
       int upto = 0;
       int byteUpto = 0;
       while(upto < size) {
@@ -69,11 +65,11 @@ public class TestCopyBytes extends LuceneTestCaseJ4 {
 
       upto = 0;
       while(upto < size) {
-        if (rand.nextBoolean()) {
+        if (random.nextBoolean()) {
           out.writeByte(in.readByte());
           upto++;
         } else {
-          final int chunk = Math.min(_TestUtil.nextInt(rand, 1, bytes.length), size-upto);
+          final int chunk = Math.min(_TestUtil.nextInt(random, 1, bytes.length), size-upto);
           out.copyBytes(in, chunk);
           upto += chunk;
         }
@@ -86,12 +82,12 @@ public class TestCopyBytes extends LuceneTestCaseJ4 {
       IndexInput in2 = dir.openInput("test2");
       upto = 0;
       while(upto < size) {
-        if (rand.nextBoolean()) {
+        if (random.nextBoolean()) {
           final byte v = in2.readByte();
           assertEquals(value(upto), v);
           upto++;
         } else {
-          final int limit = Math.min(_TestUtil.nextInt(rand, 1, bytes.length), size-upto);
+          final int limit = Math.min(_TestUtil.nextInt(random, 1, bytes.length), size-upto);
           in2.readBytes(bytes, 0, limit);
           for(int byteIdx=0;byteIdx<limit;byteIdx++) {
             assertEquals(value(upto), bytes[byteIdx]);

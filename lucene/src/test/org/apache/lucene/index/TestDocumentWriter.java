@@ -19,45 +19,38 @@ package org.apache.lucene.index;
 
 import java.io.IOException;
 import java.io.Reader;
-import java.util.Random;
 
 import org.apache.lucene.analysis.Analyzer;
 import org.apache.lucene.analysis.MockAnalyzer;
 import org.apache.lucene.analysis.MockTokenizer;
 import org.apache.lucene.analysis.TokenFilter;
 import org.apache.lucene.analysis.TokenStream;
+import org.apache.lucene.analysis.tokenattributes.CharTermAttribute;
 import org.apache.lucene.analysis.tokenattributes.PayloadAttribute;
 import org.apache.lucene.analysis.tokenattributes.PositionIncrementAttribute;
-import org.apache.lucene.analysis.tokenattributes.CharTermAttribute;
 import org.apache.lucene.document.Document;
 import org.apache.lucene.document.Field;
-import org.apache.lucene.document.Fieldable;
 import org.apache.lucene.document.Field.Index;
 import org.apache.lucene.document.Field.Store;
 import org.apache.lucene.document.Field.TermVector;
+import org.apache.lucene.document.Fieldable;
 import org.apache.lucene.store.Directory;
 import org.apache.lucene.util.AttributeSource;
+import org.apache.lucene.util.BytesRef;
 import org.apache.lucene.util.LuceneTestCase;
 import org.apache.lucene.util._TestUtil;
-import org.apache.lucene.util.BytesRef;
 
 public class TestDocumentWriter extends LuceneTestCase {
   private Directory dir;
-  private Random random;
-  
-  public TestDocumentWriter(String s) {
-    super(s);
-  }
 
   @Override
-  protected void setUp() throws Exception {
+  public void setUp() throws Exception {
     super.setUp();
-    random = newRandom();
-    dir = newDirectory(random);
+    dir = newDirectory();
   }
   
   @Override
-  protected void tearDown() throws Exception {
+  public void tearDown() throws Exception {
     dir.close();
     super.tearDown();
   }
@@ -69,7 +62,7 @@ public class TestDocumentWriter extends LuceneTestCase {
   public void testAddDocument() throws Exception {
     Document testDoc = new Document();
     DocHelper.setupDoc(testDoc);
-    IndexWriter writer = new IndexWriter(dir, newIndexWriterConfig(random, TEST_VERSION_CURRENT, new MockAnalyzer()));
+    IndexWriter writer = new IndexWriter(dir, newIndexWriterConfig(TEST_VERSION_CURRENT, new MockAnalyzer(random)));
     writer.addDocument(testDoc);
     writer.commit();
     SegmentInfo info = writer.newestSegment();
@@ -105,8 +98,7 @@ public class TestDocumentWriter extends LuceneTestCase {
 
     // test that the norms are not present in the segment if
     // omitNorms is true
-    for (int i = 0; i < reader.core.fieldInfos.size(); i++) {
-      FieldInfo fi = reader.core.fieldInfos.fieldInfo(i);
+    for (FieldInfo fi : reader.core.fieldInfos) {
       if (fi.isIndexed) {
         assertTrue(fi.omitNorms == !reader.hasNorms(fi.name));
       }
@@ -127,11 +119,11 @@ public class TestDocumentWriter extends LuceneTestCase {
       }
     };
 
-    IndexWriter writer = new IndexWriter(dir, newIndexWriterConfig(random, TEST_VERSION_CURRENT, analyzer));
+    IndexWriter writer = new IndexWriter(dir, newIndexWriterConfig(TEST_VERSION_CURRENT, analyzer));
 
     Document doc = new Document();
-    doc.add(new Field("repeated", "repeated one", Field.Store.YES, Field.Index.ANALYZED));
-    doc.add(new Field("repeated", "repeated two", Field.Store.YES, Field.Index.ANALYZED));
+    doc.add(newField("repeated", "repeated one", Field.Store.YES, Field.Index.ANALYZED));
+    doc.add(newField("repeated", "repeated two", Field.Store.YES, Field.Index.ANALYZED));
 
     writer.addDocument(doc);
     writer.commit();
@@ -192,10 +184,10 @@ public class TestDocumentWriter extends LuceneTestCase {
       }
     };
 
-    IndexWriter writer = new IndexWriter(dir, newIndexWriterConfig(random, TEST_VERSION_CURRENT, analyzer));
+    IndexWriter writer = new IndexWriter(dir, newIndexWriterConfig(TEST_VERSION_CURRENT, analyzer));
 
     Document doc = new Document();
-    doc.add(new Field("f1", "a 5 a a", Field.Store.YES, Field.Index.ANALYZED));
+    doc.add(newField("f1", "a 5 a a", Field.Store.YES, Field.Index.ANALYZED));
 
     writer.addDocument(doc);
     writer.commit();
@@ -218,8 +210,8 @@ public class TestDocumentWriter extends LuceneTestCase {
 
 
   public void testPreAnalyzedField() throws IOException {
-    IndexWriter writer = new IndexWriter(dir, newIndexWriterConfig(random,
-        TEST_VERSION_CURRENT, new MockAnalyzer()));
+    IndexWriter writer = new IndexWriter(dir, newIndexWriterConfig(
+        TEST_VERSION_CURRENT, new MockAnalyzer(random)));
     Document doc = new Document();
     
     doc.add(new Field("preanalyzed", new TokenStream() {
@@ -272,14 +264,14 @@ public class TestDocumentWriter extends LuceneTestCase {
   public void testMixedTermVectorSettingsSameField() throws Exception {
     Document doc = new Document();
     // f1 first without tv then with tv
-    doc.add(new Field("f1", "v1", Store.YES, Index.NOT_ANALYZED, TermVector.NO));
-    doc.add(new Field("f1", "v2", Store.YES, Index.NOT_ANALYZED, TermVector.WITH_POSITIONS_OFFSETS));
+    doc.add(newField("f1", "v1", Store.YES, Index.NOT_ANALYZED, TermVector.NO));
+    doc.add(newField("f1", "v2", Store.YES, Index.NOT_ANALYZED, TermVector.WITH_POSITIONS_OFFSETS));
     // f2 first with tv then without tv
-    doc.add(new Field("f2", "v1", Store.YES, Index.NOT_ANALYZED, TermVector.WITH_POSITIONS_OFFSETS));
-    doc.add(new Field("f2", "v2", Store.YES, Index.NOT_ANALYZED, TermVector.NO));
+    doc.add(newField("f2", "v1", Store.YES, Index.NOT_ANALYZED, TermVector.WITH_POSITIONS_OFFSETS));
+    doc.add(newField("f2", "v2", Store.YES, Index.NOT_ANALYZED, TermVector.NO));
 
-    IndexWriter writer = new IndexWriter(dir, newIndexWriterConfig(random,
-        TEST_VERSION_CURRENT, new MockAnalyzer()));
+    IndexWriter writer = new IndexWriter(dir, newIndexWriterConfig(
+        TEST_VERSION_CURRENT, new MockAnalyzer(random)));
     writer.addDocument(doc);
     writer.close();
 
@@ -305,23 +297,23 @@ public class TestDocumentWriter extends LuceneTestCase {
   public void testLUCENE_1590() throws Exception {
     Document doc = new Document();
     // f1 has no norms
-    doc.add(new Field("f1", "v1", Store.NO, Index.ANALYZED_NO_NORMS));
-    doc.add(new Field("f1", "v2", Store.YES, Index.NO));
+    doc.add(newField("f1", "v1", Store.NO, Index.ANALYZED_NO_NORMS));
+    doc.add(newField("f1", "v2", Store.YES, Index.NO));
     // f2 has no TF
-    Field f = new Field("f2", "v1", Store.NO, Index.ANALYZED);
+    Field f = newField("f2", "v1", Store.NO, Index.ANALYZED);
     f.setOmitTermFreqAndPositions(true);
     doc.add(f);
-    doc.add(new Field("f2", "v2", Store.YES, Index.NO));
+    doc.add(newField("f2", "v2", Store.YES, Index.NO));
 
-    IndexWriter writer = new IndexWriter(dir, newIndexWriterConfig(random,
-        TEST_VERSION_CURRENT, new MockAnalyzer()));
+    IndexWriter writer = new IndexWriter(dir, newIndexWriterConfig(
+        TEST_VERSION_CURRENT, new MockAnalyzer(random)));
     writer.addDocument(doc);
     writer.optimize(); // be sure to have a single segment
     writer.close();
 
     _TestUtil.checkIndex(dir);
 
-    SegmentReader reader = SegmentReader.getOnlySegmentReader(dir);
+    SegmentReader reader = getOnlySegmentReader(IndexReader.open(dir, false));
     FieldInfos fi = reader.fieldInfos();
     // f1
     assertFalse("f1 should have no norms", reader.hasNorms("f1"));

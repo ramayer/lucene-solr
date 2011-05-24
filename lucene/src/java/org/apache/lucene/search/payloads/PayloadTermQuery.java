@@ -17,10 +17,10 @@ package org.apache.lucene.search.payloads;
  * limitations under the License.
  */
 
+import org.apache.lucene.index.IndexReader.AtomicReaderContext;
 import org.apache.lucene.index.Term;
 import org.apache.lucene.index.DocsAndPositionsEnum;
-import org.apache.lucene.index.IndexReader;
-import org.apache.lucene.search.Searcher;
+import org.apache.lucene.search.IndexSearcher;
 import org.apache.lucene.search.Scorer;
 import org.apache.lucene.search.Weight;
 import org.apache.lucene.search.Similarity;
@@ -41,7 +41,7 @@ import java.io.IOException;
  * {@link org.apache.lucene.index.Term} occurs.
  * <p>
  * In order to take advantage of this, you must override
- * {@link org.apache.lucene.search.Similarity#scorePayload(int, String, int, int, byte[],int,int)}
+ * {@link org.apache.lucene.search.Similarity#scorePayload(int, int, int, byte[],int,int)}
  * which returns 1 by default.
  * <p>
  * Payload scores are aggregated using a pluggable {@link PayloadFunction}.
@@ -62,22 +62,21 @@ public class PayloadTermQuery extends SpanTermQuery {
   }
 
   @Override
-  public Weight createWeight(Searcher searcher) throws IOException {
+  public Weight createWeight(IndexSearcher searcher) throws IOException {
     return new PayloadTermWeight(this, searcher);
   }
 
   protected class PayloadTermWeight extends SpanWeight {
 
-    public PayloadTermWeight(PayloadTermQuery query, Searcher searcher)
+    public PayloadTermWeight(PayloadTermQuery query, IndexSearcher searcher)
         throws IOException {
       super(query, searcher);
     }
 
     @Override
-    public Scorer scorer(IndexReader reader, boolean scoreDocsInOrder,
-        boolean topScorer) throws IOException {
-      return new PayloadTermSpanScorer((TermSpans) query.getSpans(reader),
-          this, similarity, reader.norms(query.getField()));
+    public Scorer scorer(AtomicReaderContext context, ScorerContext scorerContext) throws IOException {
+      return new PayloadTermSpanScorer((TermSpans) query.getSpans(context),
+          this, similarity, context.reader.norms(query.getField()));
     }
 
     protected class PayloadTermSpanScorer extends SpanScorer {
@@ -101,12 +100,11 @@ public class PayloadTermQuery extends SpanTermQuery {
         freq = 0.0f;
         payloadScore = 0;
         payloadsSeen = 0;
-        Similarity similarity1 = getSimilarity();
         while (more && doc == spans.doc()) {
           int matchLength = spans.end() - spans.start();
 
-          freq += similarity1.sloppyFreq(matchLength);
-          processPayload(similarity1);
+          freq += similarity.sloppyFreq(matchLength);
+          processPayload(similarity);
 
           more = spans.next();// this moves positions to the next match in this
                               // document
@@ -121,14 +119,14 @@ public class PayloadTermQuery extends SpanTermQuery {
           if (payload != null) {
             payloadScore = function.currentScore(doc, term.field(),
                                                  spans.start(), spans.end(), payloadsSeen, payloadScore,
-                                                 similarity.scorePayload(doc, term.field(), spans.start(),
+                                                 similarity.scorePayload(doc, spans.start(),
                                                                          spans.end(), payload.bytes,
                                                                          payload.offset,
                                                                          payload.length));
           } else {
             payloadScore = function.currentScore(doc, term.field(),
                                                  spans.start(), spans.end(), payloadsSeen, payloadScore,
-                                                 similarity.scorePayload(doc, term.field(), spans.start(),
+                                                 similarity.scorePayload(doc, spans.start(),
                                                                          spans.end(), null,
                                                                          0,
                                                                          0));

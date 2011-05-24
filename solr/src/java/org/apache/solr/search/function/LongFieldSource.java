@@ -18,7 +18,10 @@
 package org.apache.solr.search.function;
 
 import org.apache.lucene.index.IndexReader;
-import org.apache.lucene.search.FieldCache;
+import org.apache.lucene.index.IndexReader.AtomicReaderContext;
+import org.apache.lucene.util.Bits;
+import org.apache.lucene.search.cache.LongValuesCreator;
+import org.apache.lucene.search.cache.CachedArray.LongValues;
 import org.apache.solr.search.MutableValue;
 import org.apache.solr.search.MutableValueLong;
 
@@ -31,57 +34,48 @@ import java.util.Map;
  * using <code>getFloats()</code>
  * and makes those values available as other numeric types, casting as needed.
  *
- * @version $Id: FloatFieldSource.java 555343 2007-07-11 17:46:25Z hossman $
+ * @version $Id$
  */
 
-public class LongFieldSource extends FieldCacheSource {
-  protected FieldCache.LongParser parser;
+public class LongFieldSource extends NumericFieldCacheSource<LongValues> {
 
-  public LongFieldSource(String field) {
-    this(field, null);
+  public LongFieldSource(LongValuesCreator creator) {
+    super(creator);
   }
 
-  public LongFieldSource(String field, FieldCache.LongParser parser) {
-    super(field);
-    this.parser = parser;
-  }
-
+  @Override
   public String description() {
     return "long(" + field + ')';
   }
-
 
   public long externalToLong(String extVal) {
     return Long.parseLong(extVal);
   }
 
-  public DocValues getValues(Map context, IndexReader reader) throws IOException {
-    final long[] arr = (parser == null) ?
-            ((FieldCache) cache).getLongs(reader, field) :
-            ((FieldCache) cache).getLongs(reader, field, parser);
-    return new DocValues() {
-      public float floatVal(int doc) {
-        return (float) arr[doc];
-      }
+  public Object longToObject(long val) {
+    return val;
+  }
 
-      public int intVal(int doc) {
-        return (int) arr[doc];
-      }
-
+  @Override
+  public DocValues getValues(Map context, AtomicReaderContext readerContext) throws IOException {
+    final LongValues vals = cache.getLongs(readerContext.reader, field, creator);
+    final long[] arr = vals.values;
+    final Bits valid = vals.valid;
+    
+    return new LongDocValues(this) {
+      @Override
       public long longVal(int doc) {
-        return (long) arr[doc];
-      }
-
-      public double doubleVal(int doc) {
         return arr[doc];
       }
 
-      public String strVal(int doc) {
-        return Long.toString(arr[doc]);
+      @Override
+      public boolean exists(int doc) {
+        return valid.get(doc);
       }
 
-      public String toString(int doc) {
-        return description() + '=' + longVal(doc);
+      @Override
+      public Object objectVal(int doc) {
+        return valid.get(doc) ? longToObject(arr[doc]) : null;
       }
 
       @Override
@@ -132,31 +126,16 @@ public class LongFieldSource extends FieldCacheSource {
           @Override
           public void fillValue(int doc) {
             mval.value = longArr[doc];
+            mval.exists = valid.get(doc);
           }
         };
       }
-
-
 
     };
   }
 
   protected MutableValueLong newMutableValueLong() {
     return new MutableValueLong();  
-  }
-
-  public boolean equals(Object o) {
-    if (o.getClass() != this.getClass()) return false;
-    LongFieldSource other = (LongFieldSource) o;
-    return super.equals(other)
-            && this.parser == null ? other.parser == null :
-            this.parser.getClass() == other.parser.getClass();
-  }
-
-  public int hashCode() {
-    int h = parser == null ? this.getClass().hashCode() : parser.getClass().hashCode();
-    h += super.hashCode();
-    return h;
   }
 
 }

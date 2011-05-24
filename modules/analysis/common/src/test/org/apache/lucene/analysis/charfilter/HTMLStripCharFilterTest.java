@@ -18,8 +18,6 @@ package org.apache.lucene.analysis.charfilter;
  */
 
 import java.io.BufferedReader;
-import java.io.File;
-import java.io.FileReader;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
@@ -34,18 +32,13 @@ import org.apache.lucene.util.LuceneTestCase;
 
 public class HTMLStripCharFilterTest extends LuceneTestCase {
 
-
-  public HTMLStripCharFilterTest(String s) {
-    super(s);
-  }
-
   @Override
-  protected void setUp() throws Exception {
+  public void setUp() throws Exception {
     super.setUp();
   }
 
   @Override
-  protected void tearDown() throws Exception {
+  public void tearDown() throws Exception {
     super.tearDown();
   }
   //this is some text  here is a  link  and another  link . This is an entity: & plus a <.  Here is an &
@@ -176,7 +169,7 @@ public class HTMLStripCharFilterTest extends LuceneTestCase {
 
   public void testBufferOverflow() throws Exception {
     StringBuilder testBuilder = new StringBuilder(HTMLStripCharFilter.DEFAULT_READ_AHEAD + 50);
-    testBuilder.append("ah<?> ");
+    testBuilder.append("ah<?> ??????");
     appendChars(testBuilder, HTMLStripCharFilter.DEFAULT_READ_AHEAD + 500);
     processBuffer(testBuilder.toString(), "Failed on pseudo proc. instr.");//processing instructions
 

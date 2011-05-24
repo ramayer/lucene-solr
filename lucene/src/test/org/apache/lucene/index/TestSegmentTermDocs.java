@@ -25,29 +25,22 @@ import org.apache.lucene.document.Field;
 import org.apache.lucene.util.BytesRef;
 
 import java.io.IOException;
-import java.util.Random;
 
 public class TestSegmentTermDocs extends LuceneTestCase {
   private Document testDoc = new Document();
   private Directory dir;
   private SegmentInfo info;
-  private Random random;
-
-  public TestSegmentTermDocs(String s) {
-    super(s);
-  }
 
   @Override
-  protected void setUp() throws Exception {
+  public void setUp() throws Exception {
     super.setUp();
-    random = newRandom();
-    dir = newDirectory(random);
+    dir = newDirectory();
     DocHelper.setupDoc(testDoc);
-    info = DocHelper.writeDoc(dir, testDoc);
+    info = DocHelper.writeDoc(random, dir, testDoc);
   }
   
   @Override
-  protected void tearDown() throws Exception {
+  public void tearDown() throws Exception {
     dir.close();
     super.tearDown();
   }
@@ -111,8 +104,8 @@ public class TestSegmentTermDocs extends LuceneTestCase {
   }
 
   public void testSkipTo(int indexDivisor) throws IOException {
-    Directory dir = newDirectory(random);
-    IndexWriter writer = new IndexWriter(dir, newIndexWriterConfig(random, TEST_VERSION_CURRENT, new MockAnalyzer()));
+    Directory dir = newDirectory();
+    IndexWriter writer = new IndexWriter(dir, newIndexWriterConfig( TEST_VERSION_CURRENT, new MockAnalyzer(random)).setMergePolicy(newLogMergePolicy()));
     
     Term ta = new Term("content","aaa");
     for(int i = 0; i < 10; i++)
@@ -258,7 +251,7 @@ public class TestSegmentTermDocs extends LuceneTestCase {
   public void testIndexDivisor() throws IOException {
     testDoc = new Document();
     DocHelper.setupDoc(testDoc);
-    DocHelper.writeDoc(dir, testDoc);
+    DocHelper.writeDoc(random, dir, testDoc);
     testTermDocs(2);
     testBadSeek(2);
     testSkipTo(2);
@@ -267,7 +260,7 @@ public class TestSegmentTermDocs extends LuceneTestCase {
   private void addDoc(IndexWriter writer, String value) throws IOException
   {
       Document doc = new Document();
-      doc.add(new Field("content", value, Field.Store.NO, Field.Index.ANALYZED));
+      doc.add(newField("content", value, Field.Store.NO, Field.Index.ANALYZED));
       writer.addDocument(doc);
   }
 }

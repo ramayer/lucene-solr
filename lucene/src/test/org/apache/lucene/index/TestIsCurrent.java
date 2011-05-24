@@ -18,40 +18,32 @@ package org.apache.lucene.index;
  */
 
 import org.apache.lucene.document.Document;
-import org.apache.lucene.document.Field;
 import org.apache.lucene.document.Field.Index;
 import org.apache.lucene.document.Field.Store;
 import org.apache.lucene.util.*;
-import org.apache.lucene.analysis.*;
 import org.apache.lucene.store.*;
 
-import static org.junit.Assert.*;
 import org.junit.Test;
 
 import java.io.IOException;
-import java.util.Random;
 
-public class TestIsCurrent extends LuceneTestCaseJ4 {
+public class TestIsCurrent extends LuceneTestCase {
 
   private RandomIndexWriter writer;
 
   private Directory directory;
 
-  private Random rand;
-
   @Override
   public void setUp() throws Exception {
     super.setUp();
 
-    rand = newRandom();
-
     // initialize directory
-    directory = newDirectory(rand);
-    writer = new RandomIndexWriter(rand, directory);
+    directory = newDirectory();
+    writer = new RandomIndexWriter(random, directory);
 
     // write document
     Document doc = new Document();
-    doc.add(new Field("UUID", "1", Store.YES, Index.ANALYZED));
+    doc.add(newField("UUID", "1", Store.YES, Index.ANALYZED));
     writer.addDocument(doc);
     writer.commit();
   }
@@ -76,7 +68,7 @@ public class TestIsCurrent extends LuceneTestCaseJ4 {
 
     // assert index has a document and reader is up2date 
     assertEquals("One document should be in the index", 1, writer.numDocs());
-    assertTrue("Document added, reader should be stale ", reader.isCurrent());
+    assertTrue("One document added, reader should be current", reader.isCurrent());
 
     // remove document
     Term idTerm = new Term("UUID", "1");

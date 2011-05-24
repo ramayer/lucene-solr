@@ -22,7 +22,6 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
-import java.util.Random;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
@@ -46,34 +45,33 @@ import org.apache.lucene.util.LuceneTestCase;
 public class TestSpellChecker extends LuceneTestCase {
   private SpellCheckerMock spellChecker;
   private Directory userindex, spellindex;
-  private final Random random = newRandom();
   private List<IndexSearcher> searchers;
 
   @Override
-  protected void setUp() throws Exception {
+  public void setUp() throws Exception {
     super.setUp();
     
     //create a user index
-    userindex = newDirectory(random);
+    userindex = newDirectory();
     IndexWriter writer = new IndexWriter(userindex, new IndexWriterConfig(
-        TEST_VERSION_CURRENT, new MockAnalyzer()));
+        TEST_VERSION_CURRENT, new MockAnalyzer(random)));
 
     for (int i = 0; i < 1000; i++) {
       Document doc = new Document();
-      doc.add(new Field("field1", English.intToEnglish(i), Field.Store.YES, Field.Index.ANALYZED));
-      doc.add(new Field("field2", English.intToEnglish(i + 1), Field.Store.YES, Field.Index.ANALYZED)); // + word thousand
-      doc.add(new Field("field3", "fvei" + (i % 2 == 0 ? " five" : ""), Field.Store.YES, Field.Index.ANALYZED)); // + word thousand
+      doc.add(newField("field1", English.intToEnglish(i), Field.Store.YES, Field.Index.ANALYZED));
+      doc.add(newField("field2", English.intToEnglish(i + 1), Field.Store.YES, Field.Index.ANALYZED)); // + word thousand
+      doc.add(newField("field3", "fvei" + (i % 2 == 0 ? " five" : ""), Field.Store.YES, Field.Index.ANALYZED)); // + word thousand
       writer.addDocument(doc);
     }
     writer.close();
     searchers = Collections.synchronizedList(new ArrayList<IndexSearcher>());
     // create the spellChecker
-    spellindex = newDirectory(random);
+    spellindex = newDirectory();
     spellChecker = new SpellCheckerMock(spellindex);
   }
   
   @Override
-  protected void tearDown() throws Exception {
+  public void tearDown() throws Exception {
     userindex.close();
     if (!spellChecker.isClosed())
       spellChecker.close();
@@ -124,7 +122,7 @@ public class TestSpellChecker extends LuceneTestCase {
 
   public void testComparator() throws Exception {
     IndexReader r = IndexReader.open(userindex, true);
-    Directory compIdx = newDirectory(random);
+    Directory compIdx = newDirectory();
     SpellChecker compareSP = new SpellCheckerMock(compIdx, new LevensteinDistance(), new SuggestWordFrequencyComparator());
     addwords(r, compareSP, "field3");
 

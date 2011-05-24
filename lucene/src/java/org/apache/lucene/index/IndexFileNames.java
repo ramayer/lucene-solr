@@ -78,6 +78,10 @@ public final class IndexFileNames {
 
   /** Extension of separate norms */
   public static final String SEPARATE_NORMS_EXTENSION = "s";
+  
+  /** Extension of global field numbers */
+  public static final String GLOBAL_FIELD_NUM_MAP_EXTENSION = "fnx";
+  
 
   /**
    * This array contains all filename extensions used by
@@ -98,6 +102,7 @@ public final class IndexFileNames {
     GEN_EXTENSION,
     NORMS_EXTENSION,
     COMPOUND_FILE_STORE_EXTENSION,
+    GLOBAL_FIELD_NUM_MAP_EXTENSION,
   };
 
   public static final String[] STORE_INDEX_EXTENSIONS = new String[] {
@@ -204,7 +209,7 @@ public final class IndexFileNames {
   
   /**
    * Returns true if the given filename ends with the given extension. One
-   * should provide a <i>pure</i> extension, withouth '.'.
+   * should provide a <i>pure</i> extension, without '.'.
    */
   public static boolean matchesExtension(String filename, String ext) {
     // It doesn't make a difference whether we allocate a StringBuilder ourself

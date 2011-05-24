@@ -24,6 +24,7 @@ package org.apache.lucene.index.codecs.intblock;
 import java.io.IOException;
 
 import org.apache.lucene.index.codecs.sep.IntIndexInput;
+import org.apache.lucene.store.DataInput;
 import org.apache.lucene.store.IndexInput;
 import org.apache.lucene.util.IntsRef;
 
@@ -149,19 +150,19 @@ public abstract class FixedIntBlockIndexInput extends IntIndexInput {
     private int upto;
 
     @Override
-    public void read(final IndexInput indexIn, final boolean absolute) throws IOException {
+    public void read(final DataInput indexIn, final boolean absolute) throws IOException {
       if (absolute) {
-        fp = indexIn.readVLong();
         upto = indexIn.readVInt();
+        fp = indexIn.readVLong();
       } else {
-        final long delta = indexIn.readVLong();
-        if (delta == 0) {
+        final int uptoDelta = indexIn.readVInt();
+        if ((uptoDelta & 1) == 1) {
           // same block
-          upto += indexIn.readVInt();
+          upto += uptoDelta >>> 1;
         } else {
           // new block
-          fp += delta;
-          upto = indexIn.readVInt();
+          upto = uptoDelta >>> 1;
+          fp += indexIn.readVLong();
         }
       }
       assert upto < blockSize;
@@ -185,6 +186,11 @@ public abstract class FixedIntBlockIndexInput extends IntIndexInput {
       other.fp = fp;
       other.upto = upto;
       return other;
+    }
+    
+    @Override
+    public String toString() {
+      return "fp=" + fp + " upto=" + upto;
     }
   }
 }

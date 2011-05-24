@@ -18,9 +18,11 @@ package org.apache.solr.schema;
 
 import org.apache.lucene.document.Fieldable;
 import org.apache.lucene.search.SortField;
+import org.apache.lucene.search.cache.CachedArrayCreator;
+import org.apache.lucene.search.cache.ShortValuesCreator;
 
 import org.apache.solr.response.TextResponseWriter;
-import org.apache.solr.response.XMLWriter;
+import org.apache.solr.search.QParser;
 import org.apache.solr.search.function.ValueSource;
 import org.apache.solr.search.function.ShortFieldSource;
 
@@ -33,25 +35,23 @@ import java.util.Map;
  *
  **/
 public class ShortField extends FieldType {
+  @Override
   protected void init(IndexSchema schema, Map<String, String> args) {
     restrictProps(SORT_MISSING_FIRST | SORT_MISSING_LAST);
   }
 
   /////////////////////////////////////////////////////////////
 
+  @Override
   public SortField getSortField(SchemaField field, boolean reverse) {
-
+    field.checkSortability();
     return new SortField(field.name, SortField.SHORT, reverse);
   }
 
-  public ValueSource getValueSource(SchemaField field) {
-
-    return new ShortFieldSource(field.name);
-  }
-
-
-  public void write(XMLWriter xmlWriter, String name, Fieldable f) throws IOException {
-    xmlWriter.writeShort(name, f.stringValue());
+  @Override
+  public ValueSource getValueSource(SchemaField field, QParser qparser) {
+    field.checkFieldCacheSource(qparser);
+    return new ShortFieldSource(new ShortValuesCreator( field.name, null, CachedArrayCreator.CACHE_VALUES_AND_BITS ) );
   }
 
   @Override
@@ -71,7 +71,7 @@ public class ShortField extends FieldType {
 
     try {
       short val = Short.parseShort(s);
-      writer.writeShort(name, val);
+      writer.writeInt(name, val);
     } catch (NumberFormatException e){
       // can't parse - write out the contents as a string so nothing is lost and
       // clients don't get a parse error.

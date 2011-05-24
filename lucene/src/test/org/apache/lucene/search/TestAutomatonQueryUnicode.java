@@ -18,7 +18,6 @@ package org.apache.lucene.search;
  */
 
 import java.io.IOException;
-import java.util.Random;
 
 import org.apache.lucene.document.Document;
 import org.apache.lucene.document.Field;
@@ -42,17 +41,17 @@ public class TestAutomatonQueryUnicode extends LuceneTestCase {
 
   private final String FN = "field";
 
+  @Override
   public void setUp() throws Exception {
     super.setUp();
-    Random random = newRandom();
-    directory = newDirectory(random);
+    directory = newDirectory();
     RandomIndexWriter writer = new RandomIndexWriter(random, directory);
     Document doc = new Document();
-    Field titleField = new Field("title", "some title", Field.Store.NO,
+    Field titleField = newField("title", "some title", Field.Store.NO,
         Field.Index.ANALYZED);
-    Field field = new Field(FN, "", Field.Store.NO,
+    Field field = newField(FN, "", Field.Store.NO,
         Field.Index.ANALYZED);
-    Field footerField = new Field("footer", "a footer", Field.Store.NO,
+    Field footerField = newField("footer", "a footer", Field.Store.NO,
         Field.Index.ANALYZED);
     doc.add(titleField);
     doc.add(field);
@@ -83,10 +82,11 @@ public class TestAutomatonQueryUnicode extends LuceneTestCase {
     field.setValue("\uFFFD\uFFFD");
     writer.addDocument(doc);
     reader = writer.getReader();
-    searcher = new IndexSearcher(reader);
+    searcher = newSearcher(reader);
     writer.close();
   }
 
+  @Override
   public void tearDown() throws Exception {
     searcher.close();
     reader.close();

@@ -4,7 +4,6 @@ import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
-import java.util.Random;
 
 import org.apache.lucene.analysis.Analyzer;
 import org.apache.lucene.analysis.MockAnalyzer;
@@ -21,6 +20,9 @@ import org.apache.lucene.search.TopDocs;
 import org.apache.lucene.store.Directory;
 import org.apache.lucene.util.Version;
 import org.apache.lucene.util.LuceneTestCase;
+import org.junit.AfterClass;
+import org.junit.Assume;
+import org.junit.BeforeClass;
 /**
  * Licensed to the Apache Software Foundation (ASF) under one or more
  * contributor license agreements.  See the NOTICE file distributed with
@@ -39,28 +41,21 @@ import org.apache.lucene.util.LuceneTestCase;
  */
 
 public class TestParser extends LuceneTestCase {
+	private static CoreParser builder;
+	private static Directory dir;
+	private static IndexReader reader;
+	private static IndexSearcher searcher;
 
-	CoreParser builder;
-	static Directory dir;
-  // TODO: rewrite test (this needs to set QueryParser.enablePositionIncrements, too, for work with CURRENT):
-	Analyzer analyzer=new MockAnalyzer(MockTokenizer.WHITESPACE, true, MockTokenFilter.ENGLISH_STOPSET, false); 
-	IndexReader reader;
-	private IndexSearcher searcher;
-
-	/*
-	 * @see TestCase#setUp()
-	 */
-	@Override
-	protected void setUp() throws Exception {
-		super.setUp();
+	@BeforeClass
+	public static void beforeClass() throws Exception {
+	  // TODO: rewrite test (this needs to set QueryParser.enablePositionIncrements, too, for work with CURRENT):
+	  Analyzer analyzer=new MockAnalyzer(random, MockTokenizer.WHITESPACE, true, MockTokenFilter.ENGLISH_STOPSET, false); 
+    //initialize the parser
+	  builder=new CorePlusExtensionsParser("contents",analyzer);
 		
-		//initialize the parser
-		builder=new CorePlusExtensionsParser("contents",analyzer);
-		
-		  Random random = newRandom();
 			BufferedReader d = new BufferedReader(new InputStreamReader(TestParser.class.getResourceAsStream("reuters21578.txt"))); 
-			dir=newDirectory(random);
-			IndexWriter writer = new IndexWriter(dir, newIndexWriterConfig(random, Version.LUCENE_24, analyzer));
+			dir=newDirectory();
+			IndexWriter writer = new IndexWriter(dir, newIndexWriterConfig(Version.LUCENE_40, analyzer));
 			String line = d.readLine();		
 			while(line!=null)
 			{
@@ -68,8 +63,8 @@ public class TestParser extends LuceneTestCase {
 				String date=line.substring(0,endOfDate).trim();
 				String content=line.substring(endOfDate).trim();
 				org.apache.lucene.document.Document doc =new org.apache.lucene.document.Document();
-				doc.add(new Field("date",date,Field.Store.YES,Field.Index.ANALYZED));
-				doc.add(new Field("contents",content,Field.Store.YES,Field.Index.ANALYZED));
+				doc.add(newField("date",date,Field.Store.YES,Field.Index.ANALYZED));
+				doc.add(newField("contents",content,Field.Store.YES,Field.Index.ANALYZED));
 				NumericField numericField = new NumericField("date2");
 				numericField.setIntValue(Integer.valueOf(date));
 				doc.add(numericField);
@@ -79,20 +74,24 @@ public class TestParser extends LuceneTestCase {
 			d.close();
       writer.close();
 		reader=IndexReader.open(dir, true);
-		searcher=new IndexSearcher(reader);
+		searcher=newSearcher(reader);
 		
 	}
 	
 	
 	
 	
-	@Override
-	protected void tearDown() throws Exception {
+	@AfterClass
+	public static void afterClass() throws Exception {
 		reader.close();
 		searcher.close();
 		dir.close();
-		super.tearDown();
+		reader = null;
+		searcher = null;
+		dir = null;
+		builder = null;
 	}
+	
 	public void testSimpleXML() throws ParserException, IOException
 	{
 			Query q=parse("TermQuery.xml");
@@ -188,6 +187,8 @@ public class TestParser extends LuceneTestCase {
 	}
 	public void testDuplicateFilterQueryXML() throws ParserException, IOException
 	{
+      Assume.assumeTrue(searcher.getIndexReader().getSequentialSubReaders() == null || 
+                        searcher.getIndexReader().getSequentialSubReaders().length == 1);
 			Query q=parse("DuplicateFilterQuery.xml");
 			int h = searcher.search(q, null, 1000).totalHits;
 			assertEquals("DuplicateFilterQuery should produce 1 result ", 1,h);
@@ -217,7 +218,10 @@ public class TestParser extends LuceneTestCase {
 	}
 	private void dumpResults(String qType,Query q, int numDocs) throws IOException
 	{
-		TopDocs hits = searcher.search(q, null, numDocs);
+                if (VERBOSE) {
+                  System.out.println("TEST: query=" + q);
+                }
+                TopDocs hits = searcher.search(q, null, numDocs);
 		assertTrue(qType +" should produce results ", hits.totalHits>0);
 		if(VERBOSE)
 		{

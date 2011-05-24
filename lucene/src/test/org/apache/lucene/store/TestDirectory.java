@@ -27,20 +27,14 @@ import java.util.Arrays;
 public class TestDirectory extends LuceneTestCase {
 
   public void testDetectClose() throws Throwable {
-    Directory dir = new RAMDirectory();
-    dir.close();
-    try {
-      dir.createOutput("test");
-      fail("did not hit expected exception");
-    } catch (AlreadyClosedException ace) {
-    }
-
-    dir = FSDirectory.open(TEMP_DIR);
-    dir.close();
-    try {
-      dir.createOutput("test");
-      fail("did not hit expected exception");
-    } catch (AlreadyClosedException ace) {
+    Directory[] dirs = new Directory[] { new RAMDirectory(), new SimpleFSDirectory(TEMP_DIR), new NIOFSDirectory(TEMP_DIR) };
+    for (Directory dir : dirs) {
+      dir.close();
+      try {
+        dir.createOutput("test");
+        fail("did not hit expected exception");
+      } catch (AlreadyClosedException ace) {
+      }
     }
   }
 
@@ -48,7 +42,7 @@ public class TestDirectory extends LuceneTestCase {
   // Test that different instances of FSDirectory can coexist on the same
   // path, can read, write, and lock files.
   public void testDirectInstantiation() throws Exception {
-    File path = new File(TEMP_DIR, "testDirectInstantiation");
+    File path = _TestUtil.getTempDir("testDirectInstantiation");
 
     int sz = 3;
     Directory[] dirs = new Directory[sz];
@@ -140,7 +134,7 @@ public class TestDirectory extends LuceneTestCase {
 
   // LUCENE-1468
   public void testFSDirectoryFilter() throws IOException {
-    checkDirectoryFilter(FSDirectory.open(new File(TEMP_DIR,"test")));
+    checkDirectoryFilter(newFSDirectory(_TestUtil.getTempDir("test")));
   }
 
   // LUCENE-1468
@@ -157,7 +151,7 @@ public class TestDirectory extends LuceneTestCase {
 
   // LUCENE-1468
   public void testCopySubdir() throws Throwable {
-    File path = new File(TEMP_DIR, "testsubdir");
+    File path = _TestUtil.getTempDir("testsubdir");
     try {
       path.mkdirs();
       new File(path, "subdir").mkdirs();
@@ -170,7 +164,7 @@ public class TestDirectory extends LuceneTestCase {
 
   // LUCENE-1468
   public void testNotDirectory() throws Throwable {
-    File path = new File(TEMP_DIR, "testnotdir");
+    File path = _TestUtil.getTempDir("testnotdir");
     Directory fsDir = new SimpleFSDirectory(path, null);
     try {
       IndexOutput out = fsDir.createOutput("afile");

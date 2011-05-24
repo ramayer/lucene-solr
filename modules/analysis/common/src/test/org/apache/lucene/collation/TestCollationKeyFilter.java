@@ -21,28 +21,36 @@ package org.apache.lucene.collation;
 import org.apache.lucene.analysis.TokenStream;
 import org.apache.lucene.analysis.Analyzer;
 import org.apache.lucene.analysis.core.KeywordTokenizer;
+import org.apache.lucene.util.BytesRef;
 
 import java.text.Collator;
 import java.util.Locale;
 import java.io.Reader;
 
-
+/**
+ * @deprecated remove when CollationKeyFilter is removed.
+ */
+@Deprecated
 public class TestCollationKeyFilter extends CollationTestBase {
-
+  // the sort order of Ø versus U depends on the version of the rules being used
+  // for the inherited root locale: Ø's order isnt specified in Locale.US since 
+  // its not used in english.
+  boolean oStrokeFirst = Collator.getInstance(new Locale("")).compare("Ø", "U") < 0;
+  
   // Neither Java 1.4.2 nor 1.5.0 has Farsi Locale collation available in
   // RuleBasedCollator.  However, the Arabic Locale seems to order the Farsi
   // characters properly.
   private Collator collator = Collator.getInstance(new Locale("ar"));
   private Analyzer analyzer = new TestAnalyzer(collator);
 
-  private String firstRangeBeginning = encodeCollationKey
-    (collator.getCollationKey(firstRangeBeginningOriginal).toByteArray());
-  private String firstRangeEnd = encodeCollationKey
-    (collator.getCollationKey(firstRangeEndOriginal).toByteArray());
-  private String secondRangeBeginning = encodeCollationKey
-    (collator.getCollationKey(secondRangeBeginningOriginal).toByteArray());
-  private String secondRangeEnd = encodeCollationKey
-    (collator.getCollationKey(secondRangeEndOriginal).toByteArray());
+  private BytesRef firstRangeBeginning = new BytesRef(encodeCollationKey
+    (collator.getCollationKey(firstRangeBeginningOriginal).toByteArray()));
+  private BytesRef firstRangeEnd = new BytesRef(encodeCollationKey
+    (collator.getCollationKey(firstRangeEndOriginal).toByteArray()));
+  private BytesRef secondRangeBeginning = new BytesRef(encodeCollationKey
+    (collator.getCollationKey(secondRangeBeginningOriginal).toByteArray()));
+  private BytesRef secondRangeEnd = new BytesRef(encodeCollationKey
+    (collator.getCollationKey(secondRangeEndOriginal).toByteArray()));
 
   
   public final class TestAnalyzer extends Analyzer {
@@ -87,9 +95,10 @@ public class TestCollationKeyFilter extends CollationTestBase {
     Analyzer denmarkAnalyzer 
       = new TestAnalyzer(Collator.getInstance(new Locale("da", "dk")));
     
-    // The ICU Collator and java.text.Collator implementations differ in their
+    // The ICU Collator and Sun java.text.Collator implementations differ in their
     // orderings - "BFJDH" is the ordering for java.text.Collator for Locale.US.
     testCollationKeySort
-      (usAnalyzer, franceAnalyzer, swedenAnalyzer, denmarkAnalyzer, "BFJDH");
+    (usAnalyzer, franceAnalyzer, swedenAnalyzer, denmarkAnalyzer, 
+     oStrokeFirst ? "BFJHD" : "BFJDH", "EACGI", "BJDFH", "BJDHF");
   }
 }

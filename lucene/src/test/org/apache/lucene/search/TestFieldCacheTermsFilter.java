@@ -27,7 +27,6 @@ import org.apache.lucene.store.Directory;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Random;
 
 /**
  * A basic unit test for FieldCacheTermsFilter
@@ -37,19 +36,18 @@ import java.util.Random;
 public class TestFieldCacheTermsFilter extends LuceneTestCase {
   public void testMissingTerms() throws Exception {
     String fieldName = "field1";
-    Random random = newRandom();
-    Directory rd = newDirectory(random);
+    Directory rd = newDirectory();
     RandomIndexWriter w = new RandomIndexWriter(random, rd);
     for (int i = 0; i < 100; i++) {
       Document doc = new Document();
       int term = i * 10; //terms are units of 10;
-      doc.add(new Field(fieldName, "" + term, Field.Store.YES, Field.Index.NOT_ANALYZED));
+      doc.add(newField(fieldName, "" + term, Field.Store.YES, Field.Index.NOT_ANALYZED));
       w.addDocument(doc);
     }
     IndexReader reader = w.getReader();
     w.close();
 
-    IndexSearcher searcher = new IndexSearcher(reader);
+    IndexSearcher searcher = newSearcher(reader);
     int numDocs = reader.numDocs();
     ScoreDoc[] results;
     MatchAllDocsQuery q = new MatchAllDocsQuery();
@@ -70,6 +68,7 @@ public class TestFieldCacheTermsFilter extends LuceneTestCase {
     results = searcher.search(q, new FieldCacheTermsFilter(fieldName,  terms.toArray(new String[0])), numDocs).scoreDocs;
     assertEquals("Must match 2", 2, results.length);
 
+    searcher.close();
     reader.close();
     rd.close();
   }

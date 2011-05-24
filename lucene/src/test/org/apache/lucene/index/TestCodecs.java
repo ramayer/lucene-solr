@@ -20,19 +20,19 @@ package org.apache.lucene.index;
 import java.io.IOException;
 import java.util.Arrays;
 import java.util.HashSet;
-import java.util.Random;
 
 import org.apache.lucene.analysis.MockAnalyzer;
 import org.apache.lucene.document.Document;
 import org.apache.lucene.document.Field;
 import org.apache.lucene.document.Field.Store;
-import org.apache.lucene.index.codecs.Codec;
 import org.apache.lucene.index.codecs.CodecProvider;
 import org.apache.lucene.index.codecs.FieldsConsumer;
 import org.apache.lucene.index.codecs.FieldsProducer;
 import org.apache.lucene.index.codecs.PostingsConsumer;
+import org.apache.lucene.index.codecs.TermStats;
 import org.apache.lucene.index.codecs.TermsConsumer;
 import org.apache.lucene.index.codecs.mocksep.MockSepCodec;
+import org.apache.lucene.index.codecs.preflex.PreFlexCodec;
 import org.apache.lucene.search.DocIdSetIterator;
 import org.apache.lucene.search.IndexSearcher;
 import org.apache.lucene.search.PhraseQuery;
@@ -40,8 +40,9 @@ import org.apache.lucene.search.Query;
 import org.apache.lucene.search.ScoreDoc;
 import org.apache.lucene.store.Directory;
 import org.apache.lucene.util.BytesRef;
-import org.apache.lucene.util.MultiCodecTestCase;
+import org.apache.lucene.util.LuceneTestCase;
 import org.apache.lucene.util.Version;
+import org.apache.lucene.util._TestUtil;
 
 // TODO: test multiple codecs here?
 
@@ -60,10 +61,7 @@ import org.apache.lucene.util.Version;
 //     goes to 1 before next one known to exist
 //   - skipTo(term)
 //   - skipTo(doc)
-
-public class TestCodecs extends MultiCodecTestCase {
-
-  private Random RANDOM;
+public class TestCodecs extends LuceneTestCase {
   private static String[] fieldNames = new String[] {"one", "two", "three", "four"};
 
   private final static int NUM_TEST_ITER = 20 * RANDOM_MULTIPLIER;
@@ -72,43 +70,6 @@ public class TestCodecs extends MultiCodecTestCase {
   private final static int NUM_TERMS_RAND = 50; // must be > 16 to test skipping
   private final static int DOC_FREQ_RAND = 500; // must be > 16 to test skipping
   private final static int TERM_DOC_FREQ_RAND = 20;
-
-  // start is inclusive and end is exclusive
-  public int nextInt(final int start, final int end) {
-    return start + RANDOM.nextInt(end-start);
-  }
-
-  private int nextInt(final int lim) {
-    return RANDOM.nextInt(lim);
-  }
-
-  char[] getRandomText() {
-
-    final int len = 1+this.nextInt(10);
-    final char[] buffer = new char[len+1];
-    for(int i=0;i<len;i++) {
-      buffer[i] = (char) this.nextInt(97, 123);
-      /*
-      final int t = nextInt(5);
-      if (0 == t && i < len-1) {
-        // Make a surrogate pair
-        // High surrogate
-        buffer[i++] = (char) nextInt(0xd800, 0xdc00);
-        // Low surrogate
-        buffer[i] = (char) nextInt(0xdc00, 0xe000);
-      } else if (t <= 1)
-        buffer[i] = (char) nextInt(0x80);
-      else if (2 == t)
-        buffer[i] = (char) nextInt(0x80, 0x800);
-      else if (3 == t)
-        buffer[i] = (char) nextInt(0x800, 0xd800);
-      else
-        buffer[i] = (char) nextInt(0xe000, 0xffff);
-    */
-    }
-    buffer[len] = 0xffff;
-    return buffer;
-  }
 
   class FieldData implements Comparable {
     final FieldInfo fieldInfo;
@@ -119,7 +80,7 @@ public class TestCodecs extends MultiCodecTestCase {
     public FieldData(final String name, final FieldInfos fieldInfos, final TermData[] terms, final boolean omitTF, final boolean storePayloads) {
       this.omitTF = omitTF;
       this.storePayloads = storePayloads;
-      fieldInfos.add(name, true);
+      fieldInfos.addOrUpdate(name, true);
       fieldInfo = fieldInfos.fieldInfo(name);
       fieldInfo.omitTermFreqAndPositions = omitTF;
       fieldInfo.storePayloads = storePayloads;
@@ -137,9 +98,11 @@ public class TestCodecs extends MultiCodecTestCase {
     public void write(final FieldsConsumer consumer) throws Throwable {
       Arrays.sort(terms);
       final TermsConsumer termsConsumer = consumer.addField(fieldInfo);
-      for (final TermData term : terms)
-        term.write(termsConsumer);
-      termsConsumer.finish();
+      long sumTotalTermCount = 0;
+      for (final TermData term : terms) {
+        sumTotalTermCount += term.write(termsConsumer);
+      }
+      termsConsumer.finish(sumTotalTermCount);
     }
   }
 
@@ -168,11 +131,12 @@ public class TestCodecs extends MultiCodecTestCase {
     }
 
     public int compareTo(final Object o) {
-      return text2.compareTo(((TermData) o).text2);
+      return text.compareTo(((TermData) o).text);
     }
 
-    public void write(final TermsConsumer termsConsumer) throws Throwable {
+    public long write(final TermsConsumer termsConsumer) throws Throwable {
       final PostingsConsumer postingsConsumer = termsConsumer.startTerm(text);
+      long totTF = 0;
       for(int i=0;i<docs.length;i++) {
         final int termDocFreq;
         if (field.omitTF) {
@@ -182,6 +146,7 @@ public class TestCodecs extends MultiCodecTestCase {
         }
         postingsConsumer.startDoc(docs[i], termDocFreq);
         if (!field.omitTF) {
+          totTF += positions[i].length;
           for(int j=0;j<positions[i].length;j++) {
             final PositionData pos = positions[i][j];
             postingsConsumer.addPosition(pos.pos, pos.payload);
@@ -189,14 +154,15 @@ public class TestCodecs extends MultiCodecTestCase {
           postingsConsumer.finishDoc();
         }
       }
-      termsConsumer.finishTerm(text, docs.length);
+      termsConsumer.finishTerm(text, new TermStats(docs.length, totTF));
+      return totTF;
     }
   }
 
   final private static String SEGMENT = "0";
 
   TermData[] makeRandomTerms(final boolean omitTF, final boolean storePayloads) {
-    final int numTerms = 1+this.nextInt(NUM_TERMS_RAND);
+    final int numTerms = 1+random.nextInt(NUM_TERMS_RAND);
     //final int numTerms = 2;
     final TermData[] terms = new TermData[numTerms];
 
@@ -205,18 +171,16 @@ public class TestCodecs extends MultiCodecTestCase {
     for(int i=0;i<numTerms;i++) {
 
       // Make term text
-      char[] text;
       String text2;
       while(true) {
-        text = this.getRandomText();
-        text2 = new String(text, 0, text.length-1);
-        if (!termsSeen.contains(text2)) {
+        text2 = _TestUtil.randomUnicodeString(random);
+        if (!termsSeen.contains(text2) && !text2.endsWith(".")) {
           termsSeen.add(text2);
           break;
         }
       }
 
-      final int docFreq = 1+this.nextInt(DOC_FREQ_RAND);
+      final int docFreq = 1+random.nextInt(DOC_FREQ_RAND);
       final int[] docs = new int[docFreq];
       PositionData[][] positions;
 
@@ -227,21 +191,21 @@ public class TestCodecs extends MultiCodecTestCase {
 
       int docID = 0;
       for(int j=0;j<docFreq;j++) {
-        docID += this.nextInt(1, 10);
+        docID += _TestUtil.nextInt(random, 1, 10);
         docs[j] = docID;
 
         if (!omitTF) {
-          final int termFreq = 1+this.nextInt(TERM_DOC_FREQ_RAND);
+          final int termFreq = 1+random.nextInt(TERM_DOC_FREQ_RAND);
           positions[j] = new PositionData[termFreq];
           int position = 0;
           for(int k=0;k<termFreq;k++) {
-            position += this.nextInt(1, 10);
+            position += _TestUtil.nextInt(random, 1, 10);
 
             final BytesRef payload;
-            if (storePayloads && this.nextInt(4) == 0) {
-              final byte[] bytes = new byte[1+this.nextInt(5)];
+            if (storePayloads && random.nextInt(4) == 0) {
+              final byte[] bytes = new byte[1+random.nextInt(5)];
               for(int l=0;l<bytes.length;l++) {
-                bytes[l] = (byte) this.nextInt(255);
+                bytes[l] = (byte) random.nextInt(255);
               }
               payload = new BytesRef(bytes);
             } else {
@@ -260,9 +224,6 @@ public class TestCodecs extends MultiCodecTestCase {
   }
 
   public void testFixedPostings() throws Throwable {
-
-    RANDOM = this.newRandom();
-
     final int NUM_TERMS = 100;
     final TermData[] terms = new TermData[NUM_TERMS];
     for(int i=0;i<NUM_TERMS;i++) {
@@ -276,12 +237,12 @@ public class TestCodecs extends MultiCodecTestCase {
     final FieldData field = new FieldData("field", fieldInfos, terms, true, false);
     final FieldData[] fields = new FieldData[] {field};
 
-    final Directory dir = newDirectory(RANDOM);
-    this.write(fieldInfos, dir, fields);
-    final SegmentInfo si = new SegmentInfo(SEGMENT, 10000, dir, false, -1, SEGMENT, false, true, CodecProvider.getDefault().getWriter(null));
-    si.setHasProx(false);
+    final Directory dir = newDirectory();
+    FieldInfos clonedFieldInfos = (FieldInfos) fieldInfos.clone();
+    this.write(fieldInfos, dir, fields, true);
+    final SegmentInfo si = new SegmentInfo(SEGMENT, 10000, dir, false, clonedFieldInfos.buildSegmentCodecs(false), clonedFieldInfos);
 
-    final FieldsProducer reader = si.getCodec().fieldsProducer(new SegmentReadState(dir, si, fieldInfos, 64, IndexReader.DEFAULT_TERMS_INDEX_DIVISOR));
+    final FieldsProducer reader = si.getSegmentCodecs().codec().fieldsProducer(new SegmentReadState(dir, si, fieldInfos, 64, IndexReader.DEFAULT_TERMS_INDEX_DIVISOR));
 
     final FieldsEnum fieldsEnum = reader.iterator();
     assertNotNull(fieldsEnum.next());
@@ -314,9 +275,6 @@ public class TestCodecs extends MultiCodecTestCase {
   }
 
   public void testRandomPostings() throws Throwable {
-
-    RANDOM = this.newRandom();
-
     final FieldInfos fieldInfos = new FieldInfos();
 
     final FieldData[] fields = new FieldData[NUM_FIELDS];
@@ -326,21 +284,29 @@ public class TestCodecs extends MultiCodecTestCase {
       fields[i] = new FieldData(fieldNames[i], fieldInfos, this.makeRandomTerms(omitTF, storePayloads), omitTF, storePayloads);
     }
 
-    final Directory dir = newDirectory(RANDOM);
+    final Directory dir = newDirectory();
 
-    this.write(fieldInfos, dir, fields);
-    final SegmentInfo si = new SegmentInfo(SEGMENT, 10000, dir, false, -1, SEGMENT, false, true, CodecProvider.getDefault().getWriter(null));
+    if (VERBOSE) {
+      System.out.println("TEST: now write postings");
+    }
 
-    final FieldsProducer terms = si.getCodec().fieldsProducer(new SegmentReadState(dir, si, fieldInfos, 1024, IndexReader.DEFAULT_TERMS_INDEX_DIVISOR));
+    FieldInfos clonedFieldInfos = (FieldInfos) fieldInfos.clone();
+    this.write(fieldInfos, dir, fields, false);
+    final SegmentInfo si = new SegmentInfo(SEGMENT, 10000, dir, false, clonedFieldInfos.buildSegmentCodecs(false), clonedFieldInfos);
+
+    if (VERBOSE) {
+      System.out.println("TEST: now read postings");
+    }
+    final FieldsProducer terms = si.getSegmentCodecs().codec().fieldsProducer(new SegmentReadState(dir, si, fieldInfos, 1024, IndexReader.DEFAULT_TERMS_INDEX_DIVISOR));
 
     final Verify[] threads = new Verify[NUM_TEST_THREADS-1];
     for(int i=0;i<NUM_TEST_THREADS-1;i++) {
-      threads[i] = new Verify(fields, terms);
+      threads[i] = new Verify(si, fields, terms);
       threads[i].setDaemon(true);
       threads[i].start();
     }
 
-    new Verify(fields, terms).run();
+    new Verify(si, fields, terms).run();
 
     for(int i=0;i<NUM_TEST_THREADS-1;i++) {
       threads[i].join();
@@ -352,10 +318,9 @@ public class TestCodecs extends MultiCodecTestCase {
   }
 
   public void testSepPositionAfterMerge() throws IOException {
-    Random random = newRandom();
-    final Directory dir = newDirectory(random);
-    final IndexWriterConfig config = newIndexWriterConfig(random, Version.LUCENE_31,
-      new MockAnalyzer());
+    final Directory dir = newDirectory();
+    final IndexWriterConfig config = newIndexWriterConfig(Version.LUCENE_31,
+      new MockAnalyzer(random));
     config.setCodecProvider(new MockSepCodecs());
     final IndexWriter writer = new IndexWriter(dir, config);
 
@@ -365,7 +330,7 @@ public class TestCodecs extends MultiCodecTestCase {
       pq.add(new Term("content", "ccc"));
 
       final Document doc = new Document();
-      doc.add(new Field("content", "aaa bbb ccc ddd", Store.NO, Field.Index.ANALYZED_NO_NORMS));
+      doc.add(newField("content", "aaa bbb ccc ddd", Store.NO, Field.Index.ANALYZED_NO_NORMS));
 
       // add document and force commit for creating a first segment
       writer.addDocument(doc);
@@ -399,7 +364,7 @@ public class TestCodecs extends MultiCodecTestCase {
 
   private ScoreDoc[] search(final IndexWriter writer, final Query q, final int n) throws IOException {
     final IndexReader reader = writer.getReader();
-    final IndexSearcher searcher = new IndexSearcher(reader);
+    final IndexSearcher searcher = newSearcher(reader);
     try {
       return searcher.search(q, null, n).scoreDocs;
     }
@@ -413,23 +378,21 @@ public class TestCodecs extends MultiCodecTestCase {
 
     protected MockSepCodecs() {
       this.register(new MockSepCodec());
+      this.setDefaultFieldCodec("MockSep");
     }
-
-    @Override
-    public Codec getWriter(final SegmentWriteState state) {
-      return this.lookup("MockSep");
-    }
-
+    
   }
 
   private class Verify extends Thread {
     final Fields termsDict;
     final FieldData[] fields;
+    final SegmentInfo si;
     volatile boolean failed;
 
-    Verify(final FieldData[] fields, final Fields termsDict) {
+    Verify(final SegmentInfo si, final FieldData[] fields, final Fields termsDict) {
       this.fields = fields;
       this.termsDict = termsDict;
+      this.si = si;
     }
 
     @Override
@@ -462,7 +425,7 @@ public class TestCodecs extends MultiCodecTestCase {
         assertEquals(positions[i].pos, pos);
         if (positions[i].payload != null) {
           assertTrue(posEnum.hasPayload());
-          if (TestCodecs.this.nextInt(3) < 2) {
+          if (TestCodecs.random.nextInt(3) < 2) {
             // Verify the payload bytes
             final BytesRef otherPayload = posEnum.getPayload();
             assertTrue("expected=" + positions[i].payload.toString() + " got=" + otherPayload.toString(), positions[i].payload.equals(otherPayload));
@@ -476,22 +439,28 @@ public class TestCodecs extends MultiCodecTestCase {
     public void _run() throws Throwable {
 
       for(int iter=0;iter<NUM_TEST_ITER;iter++) {
-        final FieldData field = fields[TestCodecs.this.nextInt(fields.length)];
+        final FieldData field = fields[TestCodecs.random.nextInt(fields.length)];
         final TermsEnum termsEnum = termsDict.terms(field.fieldInfo.name).iterator();
+        assertTrue(field.fieldInfo.getCodecId() != FieldInfo.UNASSIGNED_CODEC_ID);
+        if (si.getSegmentCodecs().codecs[field.fieldInfo.getCodecId()] instanceof PreFlexCodec) {
+          // code below expects unicode sort order
+          continue;
+        }
 
-        // Test straight enum of the terms:
         int upto = 0;
+        // Test straight enum of the terms:
         while(true) {
           final BytesRef term = termsEnum.next();
           if (term == null) {
             break;
           }
-          assertTrue(new BytesRef(field.terms[upto++].text2).bytesEquals(term));
+          final BytesRef expected = new BytesRef(field.terms[upto++].text2);
+          assertTrue("expected=" + expected + " vs actual " + term, expected.bytesEquals(term));
         }
         assertEquals(upto, field.terms.length);
 
         // Test random seek:
-        TermData term = field.terms[TestCodecs.this.nextInt(field.terms.length)];
+        TermData term = field.terms[TestCodecs.random.nextInt(field.terms.length)];
         TermsEnum.SeekStatus status = termsEnum.seek(new BytesRef(term.text2));
         assertEquals(status, TermsEnum.SeekStatus.FOUND);
         assertEquals(term.docs.length, termsEnum.docFreq());
@@ -502,7 +471,7 @@ public class TestCodecs extends MultiCodecTestCase {
         }
 
         // Test random seek by ord:
-        final int idx = TestCodecs.this.nextInt(field.terms.length);
+        final int idx = TestCodecs.random.nextInt(field.terms.length);
         term = field.terms[idx];
         try {
           status = termsEnum.seek(idx);
@@ -523,8 +492,7 @@ public class TestCodecs extends MultiCodecTestCase {
 
         // Test seek to non-existent terms:
         for(int i=0;i<100;i++) {
-          final char[] text = TestCodecs.this.getRandomText();
-          final String text2 = new String(text, 0, text.length-1) + ".";
+          final String text2 = _TestUtil.randomUnicodeString(random) + ".";
           status = termsEnum.seek(new BytesRef(text2));
           assertTrue(status == TermsEnum.SeekStatus.NOT_FOUND ||
                      status == TermsEnum.SeekStatus.END);
@@ -549,7 +517,7 @@ public class TestCodecs extends MultiCodecTestCase {
         // Seek to non-existent empty-string term
         status = termsEnum.seek(new BytesRef(""));
         assertNotNull(status);
-        assertEquals(status, TermsEnum.SeekStatus.NOT_FOUND);
+        //assertEquals(TermsEnum.SeekStatus.NOT_FOUND, status);
 
         // Make sure we're now pointing to first term
         assertTrue(termsEnum.term().bytesEquals(new BytesRef(field.terms[0].text2)));
@@ -559,7 +527,7 @@ public class TestCodecs extends MultiCodecTestCase {
         upto = 0;
         do {
           term = field.terms[upto];
-          if (TestCodecs.this.nextInt(3) == 1) {
+          if (TestCodecs.random.nextInt(3) == 1) {
             final DocsEnum docs = termsEnum.docs(null, null);
             final DocsAndPositionsEnum postings = termsEnum.docsAndPositions(null, null);
 
@@ -574,10 +542,10 @@ public class TestCodecs extends MultiCodecTestCase {
               // Maybe skip:
               final int left = term.docs.length-upto2;
               int doc;
-              if (TestCodecs.this.nextInt(3) == 1 && left >= 1) {
-                final int inc = 1+TestCodecs.this.nextInt(left-1);
+              if (TestCodecs.random.nextInt(3) == 1 && left >= 1) {
+                final int inc = 1+TestCodecs.random.nextInt(left-1);
                 upto2 += inc;
-                if (TestCodecs.this.nextInt(2) == 1) {
+                if (TestCodecs.random.nextInt(2) == 1) {
                   doc = docsEnum.advance(term.docs[upto2]);
                   assertEquals(term.docs[upto2], doc);
                 } else {
@@ -602,7 +570,7 @@ public class TestCodecs extends MultiCodecTestCase {
               assertEquals(term.docs[upto2], doc);
               if (!field.omitTF) {
                 assertEquals(term.positions[upto2].length, docsEnum.freq());
-                if (TestCodecs.this.nextInt(2) == 1) {
+                if (TestCodecs.random.nextInt(2) == 1) {
                   this.verifyPositions(term.positions[upto2], postings);
                 }
               }
@@ -619,16 +587,20 @@ public class TestCodecs extends MultiCodecTestCase {
     }
   }
 
-  private void write(final FieldInfos fieldInfos, final Directory dir, final FieldData[] fields) throws Throwable {
+  private void write(final FieldInfos fieldInfos, final Directory dir, final FieldData[] fields, boolean allowPreFlex) throws Throwable {
 
-    final int termIndexInterval = this.nextInt(13, 27);
+    final int termIndexInterval = _TestUtil.nextInt(random, 13, 27);
+    final SegmentCodecs codecInfo =  fieldInfos.buildSegmentCodecs(false);
+    final SegmentWriteState state = new SegmentWriteState(null, dir, SEGMENT, fieldInfos, 10000, termIndexInterval, codecInfo, null);
 
-    final SegmentWriteState state = new SegmentWriteState(null, dir, SEGMENT, fieldInfos, null, 10000, 10000, termIndexInterval,
-                                                    CodecProvider.getDefault());
-
-    final FieldsConsumer consumer = state.codec.fieldsConsumer(state);
+    final FieldsConsumer consumer = state.segmentCodecs.codec().fieldsConsumer(state);
     Arrays.sort(fields);
     for (final FieldData field : fields) {
+      assertTrue(field.fieldInfo.getCodecId() != FieldInfo.UNASSIGNED_CODEC_ID);
+      if (!allowPreFlex && codecInfo.codecs[field.fieldInfo.getCodecId()] instanceof PreFlexCodec) {
+        // code below expects unicode sort order
+        continue;
+      }
       field.write(consumer);
     }
     consumer.close();

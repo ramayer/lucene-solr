@@ -18,6 +18,8 @@ package org.apache.lucene.index;
  */
 
 import org.apache.lucene.search.DocIdSetIterator;
+import org.apache.lucene.search.IndexSearcher;
+import org.apache.lucene.search.TermQuery;
 import org.apache.lucene.store.FSDirectory;
 import org.apache.lucene.store.Directory;
 import org.apache.lucene.store.IndexInput;
@@ -127,8 +129,8 @@ public class CheckIndex {
       /** Name of the segment. */
       public String name;
 
-      /** Name of codec used to read this segment. */
-      public String codec;
+      /** CodecInfo used to read this segment. */
+      public SegmentCodecs codec;
 
       /** Document count (does not take deletions into account). */
       public int docCount;
@@ -302,7 +304,7 @@ public class CheckIndex {
    *  writer. */
   public Status checkIndex(List<String> onlySegments, CodecProvider codecs) throws IOException {
     NumberFormat nf = NumberFormat.getInstance();
-    SegmentInfos sis = new SegmentInfos();
+    SegmentInfos sis = new SegmentInfos(codecs);
     Status result = new Status();
     result.dir = dir;
     try {
@@ -346,8 +348,14 @@ public class CheckIndex {
 
     if (format == DefaultSegmentInfosWriter.FORMAT_DIAGNOSTICS) {
       sFormat = "FORMAT_DIAGNOSTICS [Lucene 2.9]";
+    } else if (format == DefaultSegmentInfosWriter.FORMAT_HAS_VECTORS) {
+      sFormat = "FORMAT_HAS_VECTORS [Lucene 3.1]";
+    } else if (format == DefaultSegmentInfosWriter.FORMAT_3_1) {
+      sFormat = "FORMAT_3_1 [Lucene 3.1]";
     } else if (format == DefaultSegmentInfosWriter.FORMAT_4_0) {
       sFormat = "FORMAT_4_0 [Lucene 4.0]";
+    } else if (format == DefaultSegmentInfosWriter.FORMAT_CURRENT) {
+      throw new RuntimeException("BUG: You should update this tool!");
     } else if (format < DefaultSegmentInfosWriter.FORMAT_CURRENT) {
       sFormat = "int=" + format + " [newer version of Lucene than this tool supports]";
       skip = true;
@@ -406,7 +414,7 @@ public class CheckIndex {
       SegmentReader reader = null;
 
       try {
-        final String codec = info.getCodec().name;
+        final SegmentCodecs codec = info.getSegmentCodecs();
         msg("    codec=" + codec);
         segInfoStat.codec = codec;
         msg("    compound=" + info.getUseCompoundFile());
@@ -415,8 +423,8 @@ public class CheckIndex {
         segInfoStat.hasProx = info.getHasProx();
         msg("    numFiles=" + info.files().size());
         segInfoStat.numFiles = info.files().size();
-        msg("    size (MB)=" + nf.format(info.sizeInBytes()/(1024.*1024.)));
-        segInfoStat.sizeMB = info.sizeInBytes()/(1024.*1024.);
+        segInfoStat.sizeMB = info.sizeInBytes(true)/(1024.*1024.);
+        msg("    size (MB)=" + nf.format(segInfoStat.sizeMB));
         Map<String,String> diagnostics = info.getDiagnostics();
         segInfoStat.diagnostics = diagnostics;
         if (diagnostics.size() > 0) {
@@ -546,10 +554,12 @@ public class CheckIndex {
       if (infoStream != null) {
         infoStream.print("    test: field norms.........");
       }
-      final byte[] b = new byte[reader.maxDoc()];
+      byte[] b;
       for (final String fieldName : fieldNames) {
-        reader.norms(fieldName, b, 0);
-        ++status.totFields;
+        if (reader.hasNorms(fieldName)) {
+          b = reader.norms(fieldName);
+          ++status.totFields;
+        }
       }
 
       msg("OK [" + status.totFields + " fields]");
@@ -573,6 +583,8 @@ public class CheckIndex {
     final int maxDoc = reader.maxDoc();
     final Bits delDocs = reader.getDeletedDocs();
 
+    final IndexSearcher is = new IndexSearcher(reader);
+
     try {
 
       if (infoStream != null) {
@@ -584,7 +596,10 @@ public class CheckIndex {
         msg("OK [no fields/terms]");
         return status;
       }
-      
+     
+      DocsEnum docs = null;
+      DocsAndPositionsEnum postings = null;
+
       final FieldsEnum fieldsEnum = fields.iterator();
       while(true) {
         final String field = fieldsEnum.next();
@@ -593,16 +608,15 @@ public class CheckIndex {
         }
         
         final TermsEnum terms = fieldsEnum.terms();
-
-        DocsEnum docs = null;
-        DocsAndPositionsEnum postings = null;
-
+        assert terms != null;
         boolean hasOrd = true;
         final long termCountStart = status.termCount;
 
         BytesRef lastTerm = null;
 
         Comparator<BytesRef> termComp = terms.getComparator();
+
+        long sumTotalTermFreq = 0;
 
         while(true) {
 
@@ -647,13 +661,18 @@ public class CheckIndex {
           status.termCount++;
 
           final DocsEnum docs2;
+          final boolean hasPositions;
           if (postings != null) {
             docs2 = postings;
+            hasPositions = true;
           } else {
             docs2 = docs;
+            hasPositions = false;
           }
 
           int lastDoc = -1;
+          int docCount = 0;
+          long totalTermFreq = 0;
           while(true) {
             final int doc = docs2.nextDoc();
             if (doc == DocIdSetIterator.NO_MORE_DOCS) {
@@ -661,6 +680,8 @@ public class CheckIndex {
             }
             final int freq = docs2.freq();
             status.totPos += freq;
+            totalTermFreq += freq;
+            docCount++;
 
             if (doc <= lastDoc) {
               throw new RuntimeException("term " + term + ": doc " + doc + " <= lastDoc " + lastDoc);
@@ -691,18 +712,158 @@ public class CheckIndex {
               }
             }
           }
+          
+          final long totalTermFreq2 = terms.totalTermFreq();
+          final boolean hasTotalTermFreq = postings != null && totalTermFreq2 != -1;
 
-          // Now count how many deleted docs occurred in
-          // this term:
-
+          // Re-count if there are deleted docs:
           if (reader.hasDeletions()) {
             final DocsEnum docsNoDel = terms.docs(null, docs);
-            int count = 0;
+            docCount = 0;
+            totalTermFreq = 0;
             while(docsNoDel.nextDoc() != DocIdSetIterator.NO_MORE_DOCS) {
-              count++;
+              docCount++;
+              totalTermFreq += docsNoDel.freq();
             }
-            if (count != docFreq) {
-              throw new RuntimeException("term " + term + " docFreq=" + docFreq + " != tot docs w/o deletions " + count);
+          }
+
+          if (docCount != docFreq) {
+            throw new RuntimeException("term " + term + " docFreq=" + docFreq + " != tot docs w/o deletions " + docCount);
+          }
+          if (hasTotalTermFreq) {
+            sumTotalTermFreq += totalTermFreq;
+            if (totalTermFreq != totalTermFreq2) {
+              throw new RuntimeException("term " + term + " totalTermFreq=" + totalTermFreq2 + " != recomputed totalTermFreq=" + totalTermFreq);
+            }
+          }
+
+          // Test skipping
+          if (docFreq >= 16) {
+            if (hasPositions) {
+              for(int idx=0;idx<7;idx++) {
+                final int skipDocID = (int) (((idx+1)*(long) maxDoc)/8);
+                postings = terms.docsAndPositions(delDocs, postings);
+                final int docID = postings.advance(skipDocID);
+                if (docID == DocsEnum.NO_MORE_DOCS) {
+                  break;
+                } else {
+                  if (docID < skipDocID) {
+                    throw new RuntimeException("term " + term + ": advance(docID=" + skipDocID + ") returned docID=" + docID);
+                  }
+                  final int freq = postings.freq();
+                  if (freq <= 0) {
+                    throw new RuntimeException("termFreq " + freq + " is out of bounds");
+                  }
+                  int lastPosition = -1;
+                  for(int posUpto=0;posUpto<freq;posUpto++) {
+                    final int pos = postings.nextPosition();
+                    if (pos < 0) {
+                      throw new RuntimeException("position " + pos + " is out of bounds");
+                    }
+                    if (pos <= lastPosition) {
+                      throw new RuntimeException("position " + pos + " is <= lastPosition " + lastPosition);
+                    }
+                    lastPosition = pos;
+                  } 
+
+                  final int nextDocID = postings.nextDoc();
+                  if (nextDocID == DocsEnum.NO_MORE_DOCS) {
+                    break;
+                  }
+                  if (nextDocID <= docID) {
+                    throw new RuntimeException("term " + term + ": advance(docID=" + skipDocID + "), then .next() returned docID=" + nextDocID + " vs prev docID=" + docID);
+                  }
+                }
+              }
+            } else {
+              for(int idx=0;idx<7;idx++) {
+                final int skipDocID = (int) (((idx+1)*(long) maxDoc)/8);
+                docs = terms.docs(delDocs, docs);
+                final int docID = docs.advance(skipDocID);
+                if (docID == DocsEnum.NO_MORE_DOCS) {
+                  break;
+                } else {
+                  if (docID < skipDocID) {
+                    throw new RuntimeException("term " + term + ": advance(docID=" + skipDocID + ") returned docID=" + docID);
+                  }
+                  final int nextDocID = docs.nextDoc();
+                  if (nextDocID == DocsEnum.NO_MORE_DOCS) {
+                    break;
+                  }
+                  if (nextDocID <= docID) {
+                    throw new RuntimeException("term " + term + ": advance(docID=" + skipDocID + "), then .next() returned docID=" + nextDocID + " vs prev docID=" + docID);
+                  }
+                }
+              }
+            }
+          }
+        }
+
+        if (sumTotalTermFreq != 0) {
+          final long v = fields.terms(field).getSumTotalTermFreq();
+          if (v != -1 && sumTotalTermFreq != v) {
+            throw new RuntimeException("sumTotalTermFreq for field " + field + "=" + v + " != recomputed sumTotalTermFreq=" + sumTotalTermFreq);
+          }
+        }
+
+        // Test seek to last term:
+        if (lastTerm != null) {
+          if (terms.seek(lastTerm) != TermsEnum.SeekStatus.FOUND) {
+            throw new RuntimeException("seek to last term " + lastTerm + " failed");
+          }
+
+          is.search(new TermQuery(new Term(field, lastTerm)), 1);
+        }
+
+        // Test seeking by ord
+        if (hasOrd && status.termCount-termCountStart > 0) {
+          long termCount;
+          try {
+            termCount = fields.terms(field).getUniqueTermCount();
+          } catch (UnsupportedOperationException uoe) {
+            termCount = -1;
+          }
+
+          if (termCount != -1 && termCount != status.termCount - termCountStart) {
+            throw new RuntimeException("termCount mismatch " + termCount + " vs " + (status.termCount - termCountStart));
+          }
+
+          int seekCount = (int) Math.min(10000L, termCount);
+          if (seekCount > 0) {
+            BytesRef[] seekTerms = new BytesRef[seekCount];
+            
+            // Seek by ord
+            for(int i=seekCount-1;i>=0;i--) {
+              long ord = i*(termCount/seekCount);
+              terms.seek(ord);
+              seekTerms[i] = new BytesRef(terms.term());
+            }
+
+            // Seek by term
+            long totDocCount = 0;
+            for(int i=seekCount-1;i>=0;i--) {
+              if (terms.seek(seekTerms[i]) != TermsEnum.SeekStatus.FOUND) {
+                throw new RuntimeException("seek to existing term " + seekTerms[i] + " failed");
+              }
+              
+              docs = terms.docs(delDocs, docs);
+              if (docs == null) {
+                throw new RuntimeException("null DocsEnum from to existing term " + seekTerms[i]);
+              }
+
+              while(docs.nextDoc() != DocsEnum.NO_MORE_DOCS) {
+                totDocCount++;
+              }
+            }
+
+            // TermQuery
+            long totDocCount2 = 0;
+            for(int i=0;i<seekCount;i++) {
+              totDocCount2 += is.search(new TermQuery(new Term(field, seekTerms[i])), 1).totalHits;
+            }
+
+            if (totDocCount != totDocCount2) {
+              throw new RuntimeException("search to seek terms produced wrong number of hits: " + totDocCount + " vs " + totDocCount2);
             }
           }
         }
@@ -711,7 +872,7 @@ public class CheckIndex {
       msg("OK [" + status.termCount + " terms; " + status.totFreq + " terms/docs pairs; " + status.totPos + " tokens]");
 
     } catch (Throwable e) {
-      msg("ERROR [" + String.valueOf(e.getMessage()) + "]");
+      msg("ERROR: " + e);
       status.error = e;
       if (infoStream != null) {
         e.printStackTrace(infoStream);
@@ -811,6 +972,7 @@ public class CheckIndex {
   public void fixIndex(Status result) throws IOException {
     if (result.partial)
       throw new IllegalArgumentException("can only fix an index that was fully checked (this status checked a subset of segments)");
+    result.newSegments.changed();
     result.newSegments.commit(result.dir);
   }
 

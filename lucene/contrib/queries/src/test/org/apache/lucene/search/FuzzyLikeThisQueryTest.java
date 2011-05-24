@@ -19,7 +19,6 @@ package org.apache.lucene.search;
 
 import java.io.IOException;
 import java.util.HashSet;
-import java.util.Random;
 
 import org.apache.lucene.analysis.Analyzer;
 import org.apache.lucene.analysis.MockAnalyzer;
@@ -35,14 +34,13 @@ public class FuzzyLikeThisQueryTest extends LuceneTestCase {
 	private Directory directory;
 	private IndexSearcher searcher;
 	private IndexReader reader;
-	private Analyzer analyzer=new MockAnalyzer();
+	private Analyzer analyzer=new MockAnalyzer(random);
 
 	@Override
-	protected void setUp() throws Exception	{
+	public void setUp() throws Exception	{
 	  super.setUp();
-	  Random random = newRandom();
-		directory = newDirectory(random);
-		RandomIndexWriter writer = new RandomIndexWriter(random, directory);
+		directory = newDirectory();
+		RandomIndexWriter writer = new RandomIndexWriter(random, directory, newIndexWriterConfig(TEST_VERSION_CURRENT, new MockAnalyzer(random)).setMergePolicy(newLogMergePolicy()));
 		
 		//Add series of docs with misspelt names
 		addDoc(writer, "jonathon smythe","1");
@@ -53,11 +51,11 @@ public class FuzzyLikeThisQueryTest extends LuceneTestCase {
 		addDoc(writer, "johnathon smythe","6");
 		reader = writer.getReader();
 		writer.close();
-		searcher=new IndexSearcher(reader);			
+		searcher=newSearcher(reader);			
 	}
 	
 	@Override
-	protected void tearDown() throws Exception {
+	public void tearDown() throws Exception {
 	  searcher.close();
 	  reader.close();
 	  directory.close();
@@ -67,8 +65,8 @@ public class FuzzyLikeThisQueryTest extends LuceneTestCase {
 	private void addDoc(RandomIndexWriter writer, String name, String id) throws IOException
 	{
 		Document doc=new Document();
-		doc.add(new Field("name",name,Field.Store.YES,Field.Index.ANALYZED));
-		doc.add(new Field("id",id,Field.Store.YES,Field.Index.ANALYZED));
+		doc.add(newField("name",name,Field.Store.YES,Field.Index.ANALYZED));
+		doc.add(newField("id",id,Field.Store.YES,Field.Index.ANALYZED));
 		writer.addDocument(doc);
 	}
 	
@@ -123,7 +121,7 @@ public class FuzzyLikeThisQueryTest extends LuceneTestCase {
 	}
 	
 	public void testFuzzyLikeThisQueryEquals() {
-	  Analyzer analyzer = new MockAnalyzer();
+	  Analyzer analyzer = new MockAnalyzer(random);
     FuzzyLikeThisQuery fltq1 = new FuzzyLikeThisQuery(10, analyzer);
     fltq1.addTerms("javi", "subject", 0.5f, 2);
     FuzzyLikeThisQuery fltq2 = new FuzzyLikeThisQuery(10, analyzer);

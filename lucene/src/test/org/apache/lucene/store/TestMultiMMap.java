@@ -20,6 +20,7 @@ package org.apache.lucene.store;
 import java.io.File;
 import java.util.Random;
 
+import org.apache.lucene.analysis.MockAnalyzer;
 import org.apache.lucene.document.Document;
 import org.apache.lucene.document.Field;
 import org.apache.lucene.index.IndexReader;
@@ -38,14 +39,13 @@ public class TestMultiMMap extends LuceneTestCase {
   File workDir;
   
   @Override
-  protected void setUp() throws Exception {
+  public void setUp() throws Exception {
       super.setUp();
-      workDir = new File(TEMP_DIR, "TestMultiMMap");
+      workDir = _TestUtil.getTempDir("TestMultiMMap");
       workDir.mkdirs();
   }
   
   public void testRandomChunkSizes() throws Exception {
-    Random random = newRandom();
     for (int i = 0; i < 10*RANDOM_MULTIPLIER; i++)
       assertChunking(random, _TestUtil.nextInt(random, 20, 100));
   }
@@ -59,10 +59,10 @@ public class TestMultiMMap extends LuceneTestCase {
     // we will map a lot, try to turn on the unmap hack
     if (MMapDirectory.UNMAP_SUPPORTED)
       dir.setUseUnmap(true);
-    RandomIndexWriter writer = new RandomIndexWriter(random, dir);
+    RandomIndexWriter writer = new RandomIndexWriter(random, dir, newIndexWriterConfig(TEST_VERSION_CURRENT, new MockAnalyzer(random)).setMergePolicy(newLogMergePolicy()));
     Document doc = new Document();
-    Field docid = new Field("docid", "0", Field.Store.YES, Field.Index.NOT_ANALYZED);
-    Field junk = new Field("junk", "", Field.Store.YES, Field.Index.NOT_ANALYZED);
+    Field docid = newField("docid", "0", Field.Store.YES, Field.Index.NOT_ANALYZED);
+    Field junk = newField("junk", "", Field.Store.YES, Field.Index.NOT_ANALYZED);
     doc.add(docid);
     doc.add(junk);
     

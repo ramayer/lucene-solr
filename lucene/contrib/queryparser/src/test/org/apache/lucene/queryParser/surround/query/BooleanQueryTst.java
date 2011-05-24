@@ -19,24 +19,22 @@ package org.apache.lucene.queryParser.surround.query;
 
 import java.io.IOException;
 
-import org.apache.lucene.index.IndexReader;
+import org.apache.lucene.index.IndexReader.AtomicReaderContext;
 import org.apache.lucene.search.IndexSearcher;
-import org.apache.lucene.search.Searcher;
 import org.apache.lucene.search.Collector;
 import org.apache.lucene.search.Scorer;
 import org.apache.lucene.search.Query;
 
 import org.apache.lucene.queryParser.surround.parser.QueryParser;
 
-import junit.framework.TestCase;
-import junit.framework.Assert;
+import org.junit.Assert;
 
 public class BooleanQueryTst {
   String queryText;
   final int[] expectedDocNrs;
   SingleFieldTestDb dBase;
   String fieldName;
-  TestCase testCase;
+  Assert testCase;
   BasicQueryFactory qf;
   boolean verbose = true;
 
@@ -45,7 +43,7 @@ public class BooleanQueryTst {
       int[] expectedDocNrs,
       SingleFieldTestDb dBase,
       String fieldName,
-      TestCase testCase,
+      Assert testCase,
       BasicQueryFactory qf) {
     this.queryText = queryText;
     this.expectedDocNrs = expectedDocNrs;
@@ -79,8 +77,8 @@ public class BooleanQueryTst {
     }
 
     @Override
-    public void setNextReader(IndexReader reader, int docBase) throws IOException {
-      this.docBase = docBase;
+    public void setNextReader(AtomicReaderContext context) throws IOException {
+      docBase = context.docBase;
     }
     
     @Override
@@ -123,7 +121,7 @@ public class BooleanQueryTst {
     /* if (verbose) System.out.println("Lucene: " + query.toString()); */
 
     TestCollector tc = new TestCollector();
-    Searcher searcher = new IndexSearcher(dBase.getDb(), true);
+    IndexSearcher searcher = new IndexSearcher(dBase.getDb(), true);
     try {
       searcher.search(query, tc);
     } finally {

@@ -23,6 +23,7 @@ import org.apache.lucene.search.DocIdSet;
 import org.apache.lucene.search.Filter;
 import org.apache.lucene.search.DocIdSetIterator;
 import org.apache.lucene.index.IndexReader;
+import org.apache.lucene.index.IndexReader.AtomicReaderContext;
 
 import java.io.IOException;
 
@@ -89,10 +90,7 @@ public interface DocSet /* extends Collection<Integer> */ {
    *
    * @return
    * An OpenBitSet with the bit number of every docid set in the set.
-   * 
-   * @deprecated Use {@link #iterator()} to access all docs instead.
    */
-  @Deprecated
   public OpenBitSet getBits();
 
   /**
@@ -116,6 +114,9 @@ public interface DocSet /* extends Collection<Integer> */ {
    * May be more efficient than actually creating the intersection and then getting it's size.
    */
   public int intersectionSize(DocSet other);
+
+  /** Returns true if these sets have any elements in common */
+  public boolean intersects(DocSet other);
 
   /**
    * Returns the union of this set with another set.  Neither set is modified - a new DocSet is
@@ -148,12 +149,21 @@ public interface DocSet /* extends Collection<Integer> */ {
    * methods will be invoked with.
    */
   public Filter getTopFilter();
+
+  /**
+   * Takes the docs from this set and sets those bits on the target OpenBitSet.
+   * The target should be sized large enough to accommodate all of the documents before calling this method.
+   */
+  public void setBitsOn(OpenBitSet target);
+
+  public static DocSet EMPTY = new SortedIntDocSet(new int[0], 0);
 }
 
 /** A base class that may be usefull for implementing DocSets */
 abstract class DocSetBase implements DocSet {
 
   // Not implemented efficiently... for testing purposes only
+  @Override
   public boolean equals(Object obj) {
     if (!(obj instanceof DocSet)) return false;
     DocSet other = (DocSet)obj;
@@ -214,6 +224,17 @@ abstract class DocSetBase implements DocSet {
     return new BitDocSet(newbits);
   }
 
+  public boolean intersects(DocSet other) {
+    // intersection is overloaded in the smaller DocSets to be more
+    // efficient, so dispatch off of it instead.
+    if (!(other instanceof BitDocSet)) {
+      return other.intersects(this);
+    }
+    // less efficient way: get the intersection size
+    return intersectionSize(other) > 0;
+  }
+
+
   public DocSet union(DocSet other) {
     OpenBitSet newbits = (OpenBitSet)(this.getBits().clone());
     newbits.or(other.getBits());
@@ -249,21 +270,19 @@ abstract class DocSetBase implements DocSet {
 
     return new Filter() {
       @Override
-      public DocIdSet getDocIdSet(IndexReader reader) throws IOException {
-        int offset = 0;
-        SolrIndexReader r = (SolrIndexReader)reader;
-        while (r.getParent() != null) {
-          offset += r.getBase();
-          r = r.getParent();
+      public DocIdSet getDocIdSet(AtomicReaderContext context) throws IOException {
+        IndexReader reader = context.reader;
+
+        if (context.isTopLevel) {
+          return bs;
         }
 
-        if (r==reader) return bs;
-
-        final int base = offset;
+        final int base = context.docBase;
         final int maxDoc = reader.maxDoc();
         final int max = base + maxDoc;   // one past the max doc in this segment.
 
         return new DocIdSet() {
+          @Override
           public DocIdSetIterator iterator() throws IOException {
             return new DocIdSetIterator() {
               int pos=base-1;
@@ -298,6 +317,14 @@ abstract class DocSetBase implements DocSet {
       }
     };
   }
+
+  public void setBitsOn(OpenBitSet target) {
+    DocIterator iter = iterator();
+    while (iter.hasNext()) {
+      target.fastSet(iter.nextDoc());
+    }
+  }
+
 }
 
 

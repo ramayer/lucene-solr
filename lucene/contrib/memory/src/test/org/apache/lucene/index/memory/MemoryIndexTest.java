@@ -22,7 +22,6 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.util.HashSet;
-import java.util.Random;
 import java.util.Set;
 
 import org.apache.lucene.analysis.Analyzer;
@@ -46,7 +45,6 @@ import org.apache.lucene.util._TestUtil;
  */
 public class MemoryIndexTest extends BaseTokenStreamTestCase {
   private Set<String> queries = new HashSet<String>();
-  private Random random;
   
   public static final int ITERATIONS = 100 * RANDOM_MULTIPLIER;
 
@@ -55,7 +53,6 @@ public class MemoryIndexTest extends BaseTokenStreamTestCase {
     super.setUp();
     queries.addAll(readQueries("testqueries.txt"));
     queries.addAll(readQueries("testqueries2.txt"));
-    random = newRandom();
   }
   
   /**
@@ -106,13 +103,13 @@ public class MemoryIndexTest extends BaseTokenStreamTestCase {
       termField.append(randomTerm());
     }
     
-    Directory ramdir = newDirectory(random);
+    Directory ramdir = newDirectory();
     Analyzer analyzer = randomAnalyzer();
     IndexWriter writer = new IndexWriter(ramdir,
                                          new IndexWriterConfig(TEST_VERSION_CURRENT, analyzer).setCodecProvider(_TestUtil.alwaysCodec("Standard")));
     Document doc = new Document();
-    Field field1 = new Field("foo", fooField.toString(), Field.Store.NO, Field.Index.ANALYZED);
-    Field field2 = new Field("term", termField.toString(), Field.Store.NO, Field.Index.ANALYZED);
+    Field field1 = newField("foo", fooField.toString(), Field.Store.NO, Field.Index.ANALYZED);
+    Field field2 = newField("term", termField.toString(), Field.Store.NO, Field.Index.ANALYZED);
     doc.add(field1);
     doc.add(field2);
     writer.addDocument(doc);
@@ -146,9 +143,9 @@ public class MemoryIndexTest extends BaseTokenStreamTestCase {
    */
   private Analyzer randomAnalyzer() {
     switch(random.nextInt(3)) {
-      case 0: return new MockAnalyzer(MockTokenizer.SIMPLE, true);
-      case 1: return new MockAnalyzer(MockTokenizer.SIMPLE, true, MockTokenFilter.ENGLISH_STOPSET, true);
-      default: return new MockAnalyzer(MockTokenizer.WHITESPACE, false);
+      case 0: return new MockAnalyzer(random, MockTokenizer.SIMPLE, true);
+      case 1: return new MockAnalyzer(random, MockTokenizer.SIMPLE, true, MockTokenFilter.ENGLISH_STOPSET, true);
+      default: return new MockAnalyzer(random, MockTokenizer.WHITESPACE, false);
     }
   }
   

@@ -172,6 +172,8 @@ public abstract class MultiLevelSkipListReader {
   public void init(long skipPointer, int df) {
     this.skipPointer[0] = skipPointer;
     this.docCount = df;
+    assert skipPointer >= 0 && skipPointer <= skipStream[0].length() 
+    : "invalid skip pointer: " + skipPointer + ", length=" + skipStream[0].length();
     Arrays.fill(skipDoc, 0);
     Arrays.fill(numSkipped, 0);
     Arrays.fill(childPointer, 0);
@@ -182,9 +184,21 @@ public abstract class MultiLevelSkipListReader {
     }
   }
   
+  /** returns x == 0 ? 0 : Math.floor(Math.log(x) / Math.log(base)) */
+  static int log(int x, int base) {
+    assert base >= 2;
+    int ret = 0;
+    long n = base; // needs to be a long to avoid overflow
+    while (x >= n) {
+      n *= base;
+      ret++;
+    }
+    return ret;
+  }
+  
   /** Loads the skip levels  */
   private void loadSkipLevels() throws IOException {
-    numberOfSkipLevels = docCount == 0 ? 0 : (int) Math.floor(Math.log(docCount) / Math.log(skipInterval[0]));
+    numberOfSkipLevels = log(docCount, skipInterval[0]);
     if (numberOfSkipLevels > maxNumberOfSkipLevels) {
       numberOfSkipLevels = maxNumberOfSkipLevels;
     }

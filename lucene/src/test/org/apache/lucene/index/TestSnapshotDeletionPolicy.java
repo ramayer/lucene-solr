@@ -1,17 +1,30 @@
 package org.apache.lucene.index;
 
-import static org.junit.Assert.*;
+/**
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the "License"); you may not use this file except in compliance with
+ * the License.  You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
 
 import java.util.Collection;
 import java.util.Map;
 import java.util.Random;
-import java.io.File;
 import java.io.IOException;
 
 import org.apache.lucene.document.Document;
 import org.apache.lucene.document.Field;
 import org.apache.lucene.store.Directory;
-import org.apache.lucene.store.FSDirectory;
 import org.apache.lucene.store.IndexInput;
 import org.apache.lucene.analysis.MockAnalyzer;
 import org.apache.lucene.index.IndexCommit;
@@ -19,10 +32,8 @@ import org.apache.lucene.index.IndexWriterConfig;
 import org.apache.lucene.index.KeepOnlyLastCommitDeletionPolicy;
 import org.apache.lucene.index.IndexWriter;
 import org.apache.lucene.index.SnapshotDeletionPolicy;
-import org.apache.lucene.util.LuceneTestCaseJ4;
+import org.apache.lucene.util.LuceneTestCase;
 import org.apache.lucene.util.ThreadInterruptedException;
-import org.apache.lucene.util._TestUtil;
-import org.junit.Before;
 import org.junit.Test;
 
 //
@@ -30,19 +41,11 @@ import org.junit.Test;
 // http://lucenebook.com
 //
 
-public class TestSnapshotDeletionPolicy extends LuceneTestCaseJ4 {
-  protected Random random;
+public class TestSnapshotDeletionPolicy extends LuceneTestCase {
   public static final String INDEX_PATH = "test.snapshots";
-
-  @Before
-  @Override
-  public void setUp() throws Exception {
-    super.setUp();
-    random = newRandom();
-  }
   
   protected IndexWriterConfig getConfig(Random random, IndexDeletionPolicy dp) {
-    IndexWriterConfig conf = newIndexWriterConfig(random, TEST_VERSION_CURRENT, new MockAnalyzer());
+    IndexWriterConfig conf = newIndexWriterConfig( TEST_VERSION_CURRENT, new MockAnalyzer(random));
     if (dp != null) {
       conf.setIndexDeletionPolicy(dp);
     }
@@ -92,18 +95,9 @@ public class TestSnapshotDeletionPolicy extends LuceneTestCaseJ4 {
   
   @Test
   public void testSnapshotDeletionPolicy() throws Exception {
-    File dir = _TestUtil.getTempDir(INDEX_PATH);
-    try {
-      Directory fsDir = FSDirectory.open(dir);
-      runTest(random, fsDir);
-      fsDir.close();
-    } finally {
-      _TestUtil.rmDir(dir);
-    }
-
-    Directory dir2 = newDirectory(random);
-    runTest(random, dir2);
-    dir2.close();
+    Directory fsDir = newDirectory();
+    runTest(random, fsDir);
+    fsDir.close();
   }
 
   private void runTest(Random random, Directory dir) throws Exception {
@@ -111,8 +105,8 @@ public class TestSnapshotDeletionPolicy extends LuceneTestCaseJ4 {
     final long stopTime = System.currentTimeMillis() + 1000;
 
     SnapshotDeletionPolicy dp = getDeletionPolicy();
-    final IndexWriter writer = new IndexWriter(dir, newIndexWriterConfig(random,
-        TEST_VERSION_CURRENT, new MockAnalyzer()).setIndexDeletionPolicy(dp)
+    final IndexWriter writer = new IndexWriter(dir, newIndexWriterConfig(
+        TEST_VERSION_CURRENT, new MockAnalyzer(random)).setIndexDeletionPolicy(dp)
         .setMaxBufferedDocs(2));
     writer.commit();
     
@@ -120,7 +114,7 @@ public class TestSnapshotDeletionPolicy extends LuceneTestCaseJ4 {
         @Override
         public void run() {
           Document doc = new Document();
-          doc.add(new Field("content", "aaa", Field.Store.YES, Field.Index.ANALYZED, Field.TermVector.WITH_POSITIONS_OFFSETS));
+          doc.add(newField("content", "aaa", Field.Store.YES, Field.Index.ANALYZED, Field.TermVector.WITH_POSITIONS_OFFSETS));
           do {
             for(int i=0;i<27;i++) {
               try {
@@ -161,7 +155,7 @@ public class TestSnapshotDeletionPolicy extends LuceneTestCaseJ4 {
     // final segment, so deletion policy has a chance to
     // delete again:
     Document doc = new Document();
-    doc.add(new Field("content", "aaa", Field.Store.YES, Field.Index.ANALYZED, Field.TermVector.WITH_POSITIONS_OFFSETS));
+    doc.add(newField("content", "aaa", Field.Store.YES, Field.Index.ANALYZED, Field.TermVector.WITH_POSITIONS_OFFSETS));
     writer.addDocument(doc);
 
     // Make sure we don't have any leftover files in the
@@ -239,7 +233,7 @@ public class TestSnapshotDeletionPolicy extends LuceneTestCaseJ4 {
     SnapshotDeletionPolicy sdp = getDeletionPolicy();
     
     // Create 3 snapshots: snapshot0, snapshot1, snapshot2
-    Directory dir = newDirectory(random);
+    Directory dir = newDirectory();
     IndexWriter writer = new IndexWriter(dir, getConfig(random, sdp));
     prepareIndexAndSnapshots(sdp, writer, numSnapshots, "snapshot");
     writer.close();
@@ -269,7 +263,7 @@ public class TestSnapshotDeletionPolicy extends LuceneTestCaseJ4 {
 
   @Test
   public void testMultiThreadedSnapshotting() throws Exception {
-    Directory dir = newDirectory(random);
+    Directory dir = newDirectory();
     final SnapshotDeletionPolicy sdp = getDeletionPolicy();
     final IndexWriter writer = new IndexWriter(dir, getConfig(random, sdp));
 
@@ -314,7 +308,7 @@ public class TestSnapshotDeletionPolicy extends LuceneTestCaseJ4 {
   @Test
   public void testRollbackToOldSnapshot() throws Exception {
     int numSnapshots = 2;
-    Directory dir = newDirectory(random);
+    Directory dir = newDirectory();
     SnapshotDeletionPolicy sdp = getDeletionPolicy();
     IndexWriter writer = new IndexWriter(dir, getConfig(random, sdp));
     prepareIndexAndSnapshots(sdp, writer, numSnapshots, "snapshot");
@@ -336,7 +330,7 @@ public class TestSnapshotDeletionPolicy extends LuceneTestCaseJ4 {
 
   @Test
   public void testReleaseSnapshot() throws Exception {
-    Directory dir = newDirectory(random);
+    Directory dir = newDirectory();
     SnapshotDeletionPolicy sdp = getDeletionPolicy();
     IndexWriter writer = new IndexWriter(dir, getConfig(random, sdp));
     prepareIndexAndSnapshots(sdp, writer, 1, "snapshot");
@@ -368,7 +362,7 @@ public class TestSnapshotDeletionPolicy extends LuceneTestCaseJ4 {
     // Tests the ability to construct a SDP from existing snapshots, and
     // asserts that those snapshots/commit points are protected.
     int numSnapshots = 3;
-    Directory dir = newDirectory(random);
+    Directory dir = newDirectory();
     SnapshotDeletionPolicy sdp = getDeletionPolicy();
     IndexWriter writer = new IndexWriter(dir, getConfig(random, sdp));
     prepareIndexAndSnapshots(sdp, writer, numSnapshots, "snapshot");
@@ -386,7 +380,7 @@ public class TestSnapshotDeletionPolicy extends LuceneTestCaseJ4 {
 
   @Test
   public void testSnapshotLastCommitTwice() throws Exception {
-    Directory dir = newDirectory(random);
+    Directory dir = newDirectory();
     SnapshotDeletionPolicy sdp = getDeletionPolicy();
     IndexWriter writer = new IndexWriter(dir, getConfig(random, sdp));
     writer.addDocument(new Document());
@@ -415,7 +409,7 @@ public class TestSnapshotDeletionPolicy extends LuceneTestCaseJ4 {
   public void testMissingCommits() throws Exception {
     // Tests the behavior of SDP when commits that are given at ctor are missing
     // on onInit().
-    Directory dir = newDirectory(random);
+    Directory dir = newDirectory();
     SnapshotDeletionPolicy sdp = getDeletionPolicy();
     IndexWriter writer = new IndexWriter(dir, getConfig(random, sdp));
     writer.addDocument(new Document());

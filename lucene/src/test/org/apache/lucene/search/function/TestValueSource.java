@@ -20,18 +20,19 @@ package org.apache.lucene.search.function;
 import org.apache.lucene.util.*;
 import org.apache.lucene.store.*;
 import org.apache.lucene.search.*;
-import org.apache.lucene.search.function.*;
 import org.apache.lucene.analysis.*;
 import org.apache.lucene.index.*;
+import org.apache.lucene.index.IndexReader.AtomicReaderContext;
 import org.apache.lucene.document.*;
 
 public class TestValueSource extends LuceneTestCase {
 
   public void testMultiValueSource() throws Exception {
-    Directory dir = newDirectory(newRandom());
-    IndexWriter w = new IndexWriter(dir, new MockAnalyzer(), IndexWriter.MaxFieldLength.UNLIMITED);
+    Directory dir = newDirectory();
+    IndexWriter w = new IndexWriter(dir, new IndexWriterConfig(TEST_VERSION_CURRENT, new MockAnalyzer(random)).setMergePolicy(newLogMergePolicy()));
+    ((LogMergePolicy) w.getConfig().getMergePolicy()).setMergeFactor(10);
     Document doc = new Document();
-    Field f = new Field("field", "", Field.Store.NO, Field.Index.NOT_ANALYZED);
+    Field f = newField("field", "", Field.Store.NO, Field.Index.NOT_ANALYZED);
     doc.add(f);
 
     for(int i=0;i<17;i++) {
@@ -40,17 +41,23 @@ public class TestValueSource extends LuceneTestCase {
       w.commit();
     }
 
-    IndexReader r = w.getReader();
+    IndexReader r = IndexReader.open(w, true);
     w.close();
 
-    assertTrue(r.getSequentialSubReaders().length > 1);
+    assertTrue("reader=" + r, r.getSequentialSubReaders().length > 1);
 
     ValueSource s1 = new IntFieldSource("field");
-    DocValues v1 = s1.getValues(r);
-    DocValues v2 = new MultiValueSource(s1).getValues(r);
-
+    AtomicReaderContext[] leaves = ReaderUtil.leaves(r.getTopReaderContext());
+    DocValues v1 = null;
+    DocValues v2 = new MultiValueSource(s1).getValues(r.getTopReaderContext());
+    int leafOrd = -1;
     for(int i=0;i<r.maxDoc();i++) {
-      assertEquals(v1.intVal(i), i);
+      int subIndex = ReaderUtil.subIndex(i, leaves);
+      if (subIndex != leafOrd) {
+        leafOrd = subIndex;
+        v1 = s1.getValues(leaves[leafOrd]);
+      }
+      assertEquals(v1.intVal(i - leaves[leafOrd].docBase), i);
       assertEquals(v2.intVal(i), i);
     }
 

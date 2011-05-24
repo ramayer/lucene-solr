@@ -213,7 +213,7 @@ public final class MultiTermsEnum extends TermsEnum {
     throw new UnsupportedOperationException();
   }
 
-  private final void pullTop() {
+  private void pullTop() {
     // extract all subs from the queue that have the same
     // top term
     assert numTop == 0;
@@ -226,7 +226,7 @@ public final class MultiTermsEnum extends TermsEnum {
     current = top[0].current;
   }
 
-  private final void pushTop() throws IOException {
+  private void pushTop() throws IOException {
     // call next() on each top, and put back into queue
     for(int i=0;i<numTop;i++) {
       top[i].current = top[i].terms.next();
@@ -257,10 +257,23 @@ public final class MultiTermsEnum extends TermsEnum {
   }
 
   @Override
-  public int docFreq() {
+  public int docFreq() throws IOException {
     int sum = 0;
     for(int i=0;i<numTop;i++) {
       sum += top[i].terms.docFreq();
+    }
+    return sum;
+  }
+
+  @Override
+  public long totalTermFreq() throws IOException {
+    long sum = 0;
+    for(int i=0;i<numTop;i++) {
+      final long v = top[i].terms.totalTermFreq();
+      if (v == -1) {
+        return v;
+      }
+      sum += v;
     }
     return sum;
   }
@@ -414,11 +427,11 @@ public final class MultiTermsEnum extends TermsEnum {
   private final static class TermMergeQueue extends PriorityQueue<TermsEnumWithSlice> {
     Comparator<BytesRef> termComp;
     TermMergeQueue(int size) {
-      initialize(size);
+      super(size);
     }
 
     @Override
-    protected final boolean lessThan(TermsEnumWithSlice termsA, TermsEnumWithSlice termsB) {
+    protected boolean lessThan(TermsEnumWithSlice termsA, TermsEnumWithSlice termsB) {
       final int cmp = termComp.compare(termsA.current, termsB.current);
       if (cmp != 0) {
         return cmp < 0;

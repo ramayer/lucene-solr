@@ -18,13 +18,17 @@
 package org.apache.solr.servlet;
 
 import java.io.IOException;
+import java.io.Writer;
 import java.io.PrintWriter;
 import java.io.StringWriter;
+import java.io.OutputStreamWriter;
 import java.io.ByteArrayInputStream;
+import java.nio.charset.Charset;
 import java.util.Map;
 import java.util.WeakHashMap;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.xml.sax.InputSource;
 
 import javax.servlet.Filter;
 import javax.servlet.FilterChain;
@@ -39,6 +43,8 @@ import org.apache.solr.common.SolrException;
 import org.apache.solr.common.util.NamedList;
 import org.apache.solr.common.util.SimpleOrderedMap;
 import org.apache.solr.common.params.CommonParams;
+import org.apache.solr.common.util.FastWriter;
+import org.apache.solr.common.util.ContentStreamBase;
 import org.apache.solr.core.*;
 import org.apache.solr.request.*;
 import org.apache.solr.response.BinaryQueryResponseWriter;
@@ -62,10 +68,12 @@ public class SolrDispatchFilter implements Filter
   protected String solrConfigFilename = null;
   protected final Map<SolrConfig, SolrRequestParsers> parsers = new WeakHashMap<SolrConfig, SolrRequestParsers>();
   protected final SolrRequestParsers adminRequestParser;
+  
+  private static final Charset UTF8 = Charset.forName("UTF-8");
 
   public SolrDispatchFilter() {
     try {
-      adminRequestParser = new SolrRequestParsers(new Config(null,"solr",new ByteArrayInputStream("<root/>".getBytes()),"") );
+      adminRequestParser = new SolrRequestParsers(new Config(null,"solr",new InputSource(new ByteArrayInputStream("<root/>".getBytes("UTF-8"))),"") );
     } catch (Exception e) {
       //unlikely
       throw new SolrException(SolrException.ErrorCode.SERVER_ERROR,e);
@@ -81,7 +89,6 @@ public class SolrDispatchFilter implements Filter
     try {
       // web.xml configuration
       this.pathPrefix = config.getInitParameter( "path-prefix" );
-      init.setSolrConfigFilename(config.getInitParameter("solrconfig-filename"));
 
       this.cores = init.initialize();
       abortOnConfigurationError = init.isAbortOnConfigurationError();
@@ -237,6 +244,7 @@ public class SolrDispatchFilter implements Filter
                  * QueryResponseWriter is selected and we get the correct
                  * Content-Type)
                  */
+                SolrRequestInfo.setRequestInfo(new SolrRequestInfo(solrReq, solrRsp));
                 this.execute( req, handler, solrReq, solrRsp );
                 HttpCacheHeaderUtil.checkHttpCachingVeto(solrRsp, resp, reqMethod);
               // add info to http headers
@@ -250,7 +258,7 @@ public class SolrDispatchFilter implements Filter
                   log.log(Level.WARNING, "exception adding response header log information", cce);
                 }*/
                QueryResponseWriter responseWriter = core.getQueryResponseWriter(solrReq);
-              writeResponse(solrRsp, response, responseWriter, solrReq, reqMethod);
+               writeResponse(solrRsp, response, responseWriter, solrReq, reqMethod);
             }
             return; // we are done with a valid handler
           }
@@ -278,6 +286,7 @@ public class SolrDispatchFilter implements Filter
         if (core != null) {
           core.close();
         }
+        SolrRequestInfo.clearRequestInfo();        
       }
     }
 
@@ -314,15 +323,22 @@ public class SolrDispatchFilter implements Filter
       sendError((HttpServletResponse) response, solrRsp.getException());
     } else {
       // Now write it out
-      response.setContentType(responseWriter.getContentType(solrReq, solrRsp));
+      final String ct = responseWriter.getContentType(solrReq, solrRsp);
+      // don't call setContentType on null
+      if (null != ct) response.setContentType(ct); 
+
       if (Method.HEAD != reqMethod) {
         if (responseWriter instanceof BinaryQueryResponseWriter) {
           BinaryQueryResponseWriter binWriter = (BinaryQueryResponseWriter) responseWriter;
           binWriter.write(response.getOutputStream(), solrReq, solrRsp);
         } else {
-          PrintWriter out = response.getWriter();
+          String charset = ContentStreamBase.getCharsetFromContentType(ct);
+          Writer out = (charset == null || charset.equalsIgnoreCase("UTF-8"))
+            ? new OutputStreamWriter(response.getOutputStream(), UTF8)
+            : new OutputStreamWriter(response.getOutputStream(), charset);
+          out = new FastWriter(out);
           responseWriter.write(out, solrReq, solrRsp);
-
+          out.flush();
         }
       }
       //else http HEAD request, nothing to write out, waited this long just to get ContentType

@@ -18,7 +18,10 @@
 package org.apache.solr.search.function;
 
 import org.apache.lucene.index.IndexReader;
-import org.apache.lucene.search.FieldCache;
+import org.apache.lucene.index.IndexReader.AtomicReaderContext;
+import org.apache.lucene.util.Bits;
+import org.apache.lucene.search.cache.DoubleValuesCreator;
+import org.apache.lucene.search.cache.CachedArray.DoubleValues;
 import org.apache.solr.search.MutableValue;
 import org.apache.solr.search.MutableValueDouble;
 
@@ -30,50 +33,58 @@ import java.util.Map;
  * using <code>getFloats()</code>
  * and makes those values available as other numeric types, casting as needed.
  *
- * @version $Id:$
+ * @version $Id$
  */
 
-public class DoubleFieldSource extends FieldCacheSource {
-  protected FieldCache.DoubleParser parser;
+public class DoubleFieldSource extends NumericFieldCacheSource<DoubleValues> {
 
-  public DoubleFieldSource(String field) {
-    this(field, null);
+  public DoubleFieldSource(DoubleValuesCreator creator) {
+    super(creator);
   }
 
-  public DoubleFieldSource(String field, FieldCache.DoubleParser parser) {
-    super(field);
-    this.parser = parser;
-  }
-
+  @Override
   public String description() {
     return "double(" + field + ')';
   }
 
-  public DocValues getValues(Map context, IndexReader reader) throws IOException {
-    final double[] arr = (parser == null) ?
-            ((FieldCache) cache).getDoubles(reader, field) :
-            ((FieldCache) cache).getDoubles(reader, field, parser);
+  @Override
+  public DocValues getValues(Map context, AtomicReaderContext readerContext) throws IOException {
+    final DoubleValues vals = cache.getDoubles(readerContext.reader, field, creator);
+    final double[] arr = vals.values;
+    final Bits valid = vals.valid;
+    
     return new DocValues() {
+      @Override
       public float floatVal(int doc) {
         return (float) arr[doc];
       }
 
+      @Override
       public int intVal(int doc) {
         return (int) arr[doc];
       }
 
+      @Override
       public long longVal(int doc) {
         return (long) arr[doc];
       }
 
+      @Override
       public double doubleVal(int doc) {
         return arr[doc];
       }
 
+      @Override
       public String strVal(int doc) {
         return Double.toString(arr[doc]);
       }
 
+      @Override
+      public Object objectVal(int doc) {
+        return valid.get(doc) ? arr[doc] : null;
+      }
+
+      @Override
       public String toString(int doc) {
         return description() + '=' + doubleVal(doc);
       }
@@ -150,6 +161,7 @@ public class DoubleFieldSource extends FieldCacheSource {
           @Override
           public void fillValue(int doc) {
             mval.value = doubleArr[doc];
+            mval.exists = valid.get(doc);
           }
         };
       }
@@ -158,19 +170,4 @@ public class DoubleFieldSource extends FieldCacheSource {
       };
 
   }
-
-  public boolean equals(Object o) {
-    if (o.getClass() != DoubleFieldSource.class) return false;
-    DoubleFieldSource other = (DoubleFieldSource) o;
-    return super.equals(other)
-            && this.parser == null ? other.parser == null :
-            this.parser.getClass() == other.parser.getClass();
-  }
-
-  public int hashCode() {
-    int h = parser == null ? Double.class.hashCode() : parser.getClass().hashCode();
-    h += super.hashCode();
-    return h;
-  }
-
 }

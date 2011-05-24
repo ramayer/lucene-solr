@@ -158,6 +158,7 @@ public final class QueryAutoStopWordAnalyzer extends Analyzer {
     /* if the stopwords for a field are changed,
      * then saved streams for that field are erased.
      */
+    @SuppressWarnings("unchecked")
     Map<String,SavedStreams> streamMap = (Map<String,SavedStreams>) getPreviousTokenStream();
     if (streamMap != null)
       streamMap.remove(fieldName);
@@ -195,6 +196,7 @@ public final class QueryAutoStopWordAnalyzer extends Analyzer {
   public TokenStream reusableTokenStream(String fieldName, Reader reader)
       throws IOException {
     /* map of SavedStreams for each field */
+    @SuppressWarnings("unchecked")
     Map<String,SavedStreams> streamMap = (Map<String,SavedStreams>) getPreviousTokenStream();
     if (streamMap == null) {
       streamMap = new HashMap<String, SavedStreams>();
@@ -223,7 +225,6 @@ public final class QueryAutoStopWordAnalyzer extends Analyzer {
       TokenStream result = delegate.reusableTokenStream(fieldName, reader);
       if (result == streams.wrapped) {
         /* the wrapped analyzer reused the stream */
-        streams.withStopFilter.reset();
       } else {
         /*
          * the wrapped analyzer did not. if there are any stopwords for the

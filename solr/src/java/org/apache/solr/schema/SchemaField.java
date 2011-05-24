@@ -17,11 +17,13 @@
 
 package org.apache.solr.schema;
 
-import org.apache.lucene.document.Field;
+import org.apache.solr.common.SolrException;
+import org.apache.solr.common.SolrException.ErrorCode;
 import org.apache.lucene.document.Fieldable;
 import org.apache.lucene.search.SortField;
+import org.apache.solr.search.QParser;
+
 import org.apache.solr.response.TextResponseWriter;
-import org.apache.solr.response.XMLWriter;
 
 import java.util.Map;
 import java.io.IOException;
@@ -90,16 +92,16 @@ public final class SchemaField extends FieldProperties {
   boolean isBinary() { return (properties & BINARY)!=0; }
 
 
-  public Field createField(String val, float boost) {
+  public Fieldable createField(Object val, float boost) {
     return type.createField(this,val,boost);
   }
   
-  public Fieldable[] createFields(String val, float boost) {
+  public Fieldable[] createFields(Object val, float boost) {
     return type.createFields(this,val,boost);
   }
 
   /**
-   * If true, then use {@link #createFields(String, float)}, else use {@link #createField} to save an extra allocation
+   * If true, then use {@link #createFields(Object, float)}, else use {@link #createField} to save an extra allocation
    * @return true if this field is a poly field
    */
   public boolean isPolyField(){
@@ -116,26 +118,66 @@ public final class SchemaField extends FieldProperties {
       + "}";
   }
 
-  public void write(XMLWriter writer, String name, Fieldable val) throws IOException {
-    // name is passed in because it may be null if name should not be used.
-    type.write(writer,name,val);
-  }
-
   public void write(TextResponseWriter writer, String name, Fieldable val) throws IOException {
     // name is passed in because it may be null if name should not be used.
     type.write(writer,name,val);
   }
 
+  /**
+   * Delegates to the FieldType for this field
+   * @see FieldType#getSortField
+   */
   public SortField getSortField(boolean top) {
     return type.getSortField(this, top);
   }
 
+  /** 
+   * Sanity checks that the properties of this field type are plausible 
+   * for a field that may be used in sorting, throwing an appropriate 
+   * exception (including the field name) if it is not.  FieldType subclasses 
+   * can choose to call this method in their getSortField implementation
+   * @see FieldType#getSortField
+   */
+  public void checkSortability() throws SolrException {
+    if (! indexed() ) {
+      throw new SolrException(SolrException.ErrorCode.BAD_REQUEST, 
+                              "can not sort on unindexed field: " 
+                              + getName());
+    }
+    if ( multiValued() ) {
+      throw new SolrException(SolrException.ErrorCode.BAD_REQUEST, 
+                              "can not sort on multivalued field: " 
+                              + getName());
+    }
+  }
+
+  /** 
+   * Sanity checks that the properties of this field type are plausible 
+   * for a field that may be used to get a FieldCacheSource, throwing 
+   * an appropriate exception (including the field name) if it is not.  
+   * FieldType subclasses can choose to call this method in their 
+   * getValueSource implementation 
+   * @see FieldType#getValueSource
+   */
+  public void checkFieldCacheSource(QParser parser) throws SolrException {
+    if (! indexed() ) {
+      throw new SolrException(SolrException.ErrorCode.BAD_REQUEST, 
+                              "can not use FieldCache on unindexed field: " 
+                              + getName());
+    }
+    if ( multiValued() ) {
+      throw new SolrException(SolrException.ErrorCode.BAD_REQUEST, 
+                              "can not use FieldCache on multivalued field: " 
+                              + getName());
+    }
+    
+  }
 
   static SchemaField create(String name, FieldType ft, Map<String,String> props) {
 
     String defaultValue = null;
     if( props.containsKey( "default" ) ) {
-    	defaultValue = (String)props.get( "default" );
+    	defaultValue = props.get( "default" );
     }
     return new SchemaField(name, ft, calcProps(name, ft, props), defaultValue );
   }

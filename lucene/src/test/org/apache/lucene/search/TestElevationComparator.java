@@ -21,6 +21,7 @@ import org.apache.lucene.analysis.MockAnalyzer;
 import org.apache.lucene.document.Document;
 import org.apache.lucene.document.Field;
 import org.apache.lucene.index.*;
+import org.apache.lucene.index.IndexReader.AtomicReaderContext;
 import org.apache.lucene.search.FieldValueHitQueue.Entry;
 import org.apache.lucene.store.*;
 import org.apache.lucene.util.LuceneTestCase;
@@ -28,7 +29,6 @@ import org.apache.lucene.util.BytesRef;
 import java.io.IOException;
 import java.util.HashMap;
 import java.util.Map;
-import java.util.Random;
 
 public class TestElevationComparator extends LuceneTestCase {
 
@@ -36,10 +36,13 @@ public class TestElevationComparator extends LuceneTestCase {
 
   //@Test
   public void testSorting() throws Throwable {
-    Random random = newRandom();
-    Directory directory = newDirectory(random);
-    IndexWriter writer = new IndexWriter(directory, newIndexWriterConfig(random, TEST_VERSION_CURRENT, new MockAnalyzer()).setMaxBufferedDocs(2));
-    ((LogMergePolicy) writer.getConfig().getMergePolicy()).setMergeFactor(1000);
+    Directory directory = newDirectory();
+    IndexWriter writer = new IndexWriter(
+        directory,
+        newIndexWriterConfig(TEST_VERSION_CURRENT, new MockAnalyzer(random)).
+            setMaxBufferedDocs(2).
+            setMergePolicy(newLogMergePolicy(1000))
+    );
     writer.addDocument(adoc(new String[] {"id", "a", "title", "ipod", "str_s", "a"}));
     writer.addDocument(adoc(new String[] {"id", "b", "title", "ipod ipod", "str_s", "b"}));
     writer.addDocument(adoc(new String[] {"id", "c", "title", "ipod ipod ipod", "str_s","c"}));
@@ -47,10 +50,10 @@ public class TestElevationComparator extends LuceneTestCase {
     writer.addDocument(adoc(new String[] {"id", "y", "title", "boosted boosted", "str_s","y"}));
     writer.addDocument(adoc(new String[] {"id", "z", "title", "boosted boosted boosted","str_s", "z"}));
 
-    IndexReader r = writer.getReader();
+    IndexReader r = IndexReader.open(writer, true);
     writer.close();
 
-    IndexSearcher searcher = new IndexSearcher(r);
+    IndexSearcher searcher = newSearcher(r);
 
     runTest(searcher, true);
     runTest(searcher, false);
@@ -121,7 +124,7 @@ public class TestElevationComparator extends LuceneTestCase {
  private Document adoc(String[] vals) {
    Document doc = new Document();
    for (int i = 0; i < vals.length - 2; i += 2) {
-     doc.add(new Field(vals[i], vals[i + 1], Field.Store.YES, Field.Index.ANALYZED));
+     doc.add(newField(vals[i], vals[i + 1], Field.Store.YES, Field.Index.ANALYZED));
    }
    return doc;
  }
@@ -175,8 +178,9 @@ class ElevationComparatorSource extends FieldComparatorSource {
      }
 
      @Override
-     public void setNextReader(IndexReader reader, int docBase) throws IOException {
-       idIndex = FieldCache.DEFAULT.getTermsIndex(reader, fieldname);
+     public FieldComparator setNextReader(AtomicReaderContext context) throws IOException {
+       idIndex = FieldCache.DEFAULT.getTermsIndex(context.reader, fieldname);
+       return this;
      }
 
      @Override

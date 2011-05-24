@@ -18,19 +18,14 @@ package org.apache.lucene.store;
  */
 
 import java.util.ArrayList;
-import java.io.Serializable;
 
 /** @lucene.internal */
-public class RAMFile implements Serializable {
-
-  private static final long serialVersionUID = 1l;
-
+public class RAMFile {
   protected ArrayList<byte[]> buffers = new ArrayList<byte[]>();
   long length;
   RAMDirectory directory;
   protected long sizeInBytes;
 
-  // This is publicly modifiable via Directory.touchFile(), so direct access not supported
   private long lastModified = System.currentTimeMillis();
 
   // File used as buffer, in no RAMDirectory

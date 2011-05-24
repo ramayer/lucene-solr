@@ -39,10 +39,10 @@
   </td>
   <td>
     <% if (null != core.getSchemaResource()) { %>
-    [<a href="file/?file=<%=core.getSchemaResource()%>">Schema</a>]
+    [<a href="file/?contentType=text/xml;charset=utf-8&file=<%=core.getSchemaResource()%>">Schema</a>]
     <% }
        if (null != core.getConfigResource()) { %>
-    [<a href="file/?file=<%=core.getConfigResource()%>">Config</a>]
+    [<a href="file/?contentType=text/xml;charset=utf-8&file=<%=core.getConfigResource()%>">Config</a>]
     <% } %>
     [<a href="analysis.jsp?highlight=on">Analysis</a>]
     [<a href="schema.jsp">Schema Browser</a>] <%if(replicationhandler){%>[<a href="replication/index.jsp">Replication</a>]<%}%>
@@ -50,6 +50,7 @@
     [<a href="stats.jsp">Statistics</a>]
     [<a href="registry.jsp">Info</a>]
     [<a href="distributiondump.jsp">Distribution</a>]
+    [<a href="zookeeper.jsp">ZooKeeper</a>]
     [<a href="ping">Ping</a>]
     [<a href="logging">Logging</a>]
   </td>
@@ -96,7 +97,7 @@
 
 <%
  // a quick hack to get rid of get-file.jsp -- note this still spits out invalid HTML
- out.write( org.apache.solr.handler.admin.ShowFileRequestHandler.getFileContents( "admin-extra.html" ) );
+ out.write( org.apache.solr.handler.admin.ShowFileRequestHandler.getFileContents(core, "admin-extra.html" ) );
 %>
 
 </table><P>
@@ -124,7 +125,7 @@
 	<input name="rows" type="hidden" value="10">
 	<input name="indent" type="hidden" value="on">
         <br><input class="stdbutton" type="submit" value="search" 
-        	onclick="if (queryForm.q.value.length==0) { alert('no empty queries, please'); return false; } else { queryForm.submit(); } ">
+        	onclick="if (queryForm.q.value.length==0) { alert('no empty queries, please'); return false; } else { queryForm.submit(); return false;} ">
 	</form>
   </td>
 </tr>

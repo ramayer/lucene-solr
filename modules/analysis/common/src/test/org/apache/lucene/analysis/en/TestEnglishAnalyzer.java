@@ -39,6 +39,8 @@ public class TestEnglishAnalyzer extends BaseTokenStreamTestCase {
     checkOneTermReuse(a, "book", "book");
     // stopword
     assertAnalyzesTo(a, "the", new String[] {});
+    // possessive removal
+    checkOneTermReuse(a, "steven's", "steven");
   }
   
   /** test use of exclusion set */
@@ -49,5 +51,10 @@ public class TestEnglishAnalyzer extends BaseTokenStreamTestCase {
         EnglishAnalyzer.getDefaultStopSet(), exclusionSet);
     checkOneTermReuse(a, "books", "books");
     checkOneTermReuse(a, "book", "book");
+  }
+  
+  /** blast some random strings through the analyzer */
+  public void testRandomStrings() throws Exception {
+    checkRandomData(random, new EnglishAnalyzer(TEST_VERSION_CURRENT), 10000*RANDOM_MULTIPLIER);
   }
 }

@@ -27,7 +27,6 @@ import org.apache.lucene.index.RandomIndexWriter;
 import org.apache.lucene.index.Term;
 
 import java.io.IOException;
-import java.util.Random;
 
 /**
  * DateFilter JUnit tests.
@@ -36,42 +35,38 @@ import java.util.Random;
  * @version $Revision$
  */
 public class TestDateFilter extends LuceneTestCase {
-  public TestDateFilter(String name) {
-    super(name);
-  }
-  
+ 
   /**
    *
    */
   public void testBefore() throws IOException {
     // create an index
-    Random random = newRandom();
-    Directory indexStore = newDirectory(random);
+    Directory indexStore = newDirectory();
     RandomIndexWriter writer = new RandomIndexWriter(random, indexStore);
     
     long now = System.currentTimeMillis();
     
     Document doc = new Document();
     // add time that is in the past
-    doc.add(new Field("datefield", DateTools.timeToString(now - 1000,
+    doc.add(newField("datefield", DateTools.timeToString(now - 1000,
         DateTools.Resolution.MILLISECOND), Field.Store.YES,
         Field.Index.NOT_ANALYZED));
-    doc.add(new Field("body", "Today is a very sunny day in New York City",
+    doc.add(newField("body", "Today is a very sunny day in New York City",
         Field.Store.YES, Field.Index.ANALYZED));
     writer.addDocument(doc);
     
     IndexReader reader = writer.getReader();
     writer.close();
-    IndexSearcher searcher = new IndexSearcher(reader);
+    IndexSearcher searcher = newSearcher(reader);
     
     // filter that should preserve matches
     // DateFilter df1 = DateFilter.Before("datefield", now);
-    TermRangeFilter df1 = new TermRangeFilter("datefield", DateTools
+    TermRangeFilter df1 = TermRangeFilter.newStringRange("datefield", DateTools
         .timeToString(now - 2000, DateTools.Resolution.MILLISECOND), DateTools
         .timeToString(now, DateTools.Resolution.MILLISECOND), false, true);
     // filter that should discard matches
     // DateFilter df2 = DateFilter.Before("datefield", now - 999999);
-    TermRangeFilter df2 = new TermRangeFilter("datefield", DateTools
+    TermRangeFilter df2 = TermRangeFilter.newStringRange("datefield", DateTools
         .timeToString(0, DateTools.Resolution.MILLISECOND), DateTools
         .timeToString(now - 2000, DateTools.Resolution.MILLISECOND), true,
         false);
@@ -103,6 +98,7 @@ public class TestDateFilter extends LuceneTestCase {
     
     result = searcher.search(query2, df2, 1000).scoreDocs;
     assertEquals(0, result.length);
+    searcher.close();
     reader.close();
     indexStore.close();
   }
@@ -112,34 +108,33 @@ public class TestDateFilter extends LuceneTestCase {
    */
   public void testAfter() throws IOException {
     // create an index
-    Random random = newRandom();
-    Directory indexStore = newDirectory(random);
+    Directory indexStore = newDirectory();
     RandomIndexWriter writer = new RandomIndexWriter(random, indexStore);
     
     long now = System.currentTimeMillis();
     
     Document doc = new Document();
     // add time that is in the future
-    doc.add(new Field("datefield", DateTools.timeToString(now + 888888,
+    doc.add(newField("datefield", DateTools.timeToString(now + 888888,
         DateTools.Resolution.MILLISECOND), Field.Store.YES,
         Field.Index.NOT_ANALYZED));
-    doc.add(new Field("body", "Today is a very sunny day in New York City",
+    doc.add(newField("body", "Today is a very sunny day in New York City",
         Field.Store.YES, Field.Index.ANALYZED));
     writer.addDocument(doc);
     
     IndexReader reader = writer.getReader();
     writer.close();
-    IndexSearcher searcher = new IndexSearcher(reader);
+    IndexSearcher searcher = newSearcher(reader);
     
     // filter that should preserve matches
     // DateFilter df1 = DateFilter.After("datefield", now);
-    TermRangeFilter df1 = new TermRangeFilter("datefield", DateTools
+    TermRangeFilter df1 = TermRangeFilter.newStringRange("datefield", DateTools
         .timeToString(now, DateTools.Resolution.MILLISECOND), DateTools
         .timeToString(now + 999999, DateTools.Resolution.MILLISECOND), true,
         false);
     // filter that should discard matches
     // DateFilter df2 = DateFilter.After("datefield", now + 999999);
-    TermRangeFilter df2 = new TermRangeFilter("datefield", DateTools
+    TermRangeFilter df2 = TermRangeFilter.newStringRange("datefield", DateTools
         .timeToString(now + 999999, DateTools.Resolution.MILLISECOND),
         DateTools.timeToString(now + 999999999,
             DateTools.Resolution.MILLISECOND), false, true);
@@ -171,6 +166,7 @@ public class TestDateFilter extends LuceneTestCase {
     
     result = searcher.search(query2, df2, 1000).scoreDocs;
     assertEquals(0, result.length);
+    searcher.close();
     reader.close();
     indexStore.close();
   }

@@ -44,15 +44,16 @@ public class QueryResponse extends SolrResponseBase
   private NamedList<Object> _facetInfo = null;
   private NamedList<Object> _debugInfo = null;
   private NamedList<Object> _highlightingInfo = null;
-  private NamedList<Object> _spellInfo = null;
+  private NamedList<NamedList<Object>> _spellInfo = null;
   private NamedList<Object> _statsInfo = null;
-  private NamedList<Object> _termsInfo = null;
+  private NamedList<NamedList<Number>> _termsInfo = null;
 
   // Facet stuff
   private Map<String,Integer> _facetQuery = null;
   private List<FacetField> _facetFields = null;
   private List<FacetField> _limitingFacets = null;
   private List<FacetField> _facetDates = null;
+  private NamedList<List<PivotField>> _facetPivot = null;
 
   // Highlight Info
   private Map<String,Map<String,List<String>>> _highlighting = null;
@@ -104,7 +105,8 @@ public class QueryResponse extends SolrResponseBase
       }
       else if( "facet_counts".equals( n ) ) {
         _facetInfo = (NamedList<Object>) res.getVal( i );
-        extractFacetInfo( _facetInfo );
+        // extractFacetInfo inspects _results, so defer calling it
+        // in case it hasn't been populated yet.
       }
       else if( "debug".equals( n ) ) {
         _debugInfo = (NamedList<Object>) res.getVal( i );
@@ -115,7 +117,7 @@ public class QueryResponse extends SolrResponseBase
         extractHighlightingInfo( _highlightingInfo );
       }
       else if ( "spellcheck".equals( n ) )  {
-        _spellInfo = (NamedList<Object>) res.getVal( i );
+        _spellInfo = (NamedList<NamedList<Object>>) res.getVal( i );
         extractSpellCheckInfo( _spellInfo );
       }
       else if ( "stats".equals( n ) )  {
@@ -123,17 +125,18 @@ public class QueryResponse extends SolrResponseBase
         extractStatsInfo( _statsInfo );
       }
       else if ( "terms".equals( n ) ) {
-        _termsInfo = (NamedList<Object>) res.getVal( i );
+        _termsInfo = (NamedList<NamedList<Number>>) res.getVal( i );
         extractTermsInfo( _termsInfo );
       }
     }
+    if(_facetInfo != null) extractFacetInfo( _facetInfo );
   }
 
-  private void extractSpellCheckInfo(NamedList<Object> spellInfo) {
+  private void extractSpellCheckInfo(NamedList<NamedList<Object>> spellInfo) {
     _spellResponse = new SpellCheckResponse(spellInfo);
   }
 
-  private void extractTermsInfo(NamedList<Object> termsInfo) {
+  private void extractTermsInfo(NamedList<NamedList<Number>> termsInfo) {
     _termsResponse = new TermsResponse(termsInfo);
   }
   
@@ -203,7 +206,7 @@ public class QueryResponse extends SolrResponseBase
       _facetFields = new ArrayList<FacetField>( ff.size() );
       _limitingFacets = new ArrayList<FacetField>( ff.size() );
       
-      long minsize = _results.getNumFound();
+      long minsize = _results == null ? Long.MAX_VALUE :_results.getNumFound();
       for( Map.Entry<String,NamedList<Number>> facet : ff ) {
         FacetField f = new FacetField( facet.getKey() );
         for( Map.Entry<String, Number> entry : facet.getValue() ) {
@@ -241,6 +244,29 @@ public class QueryResponse extends SolrResponseBase
         _facetDates.add(f);
       }
     }
+    
+    //Parse pivot facets
+    NamedList pf = (NamedList) info.get("facet_pivot");
+    if (pf != null) {
+      _facetPivot = new NamedList<List<PivotField>>();
+      for( int i=0; i<pf.size(); i++ ) {
+        _facetPivot.add( pf.getName(i), readPivots( (List<NamedList>)pf.getVal(i) ) );
+      }
+    }
+  }
+  
+  protected List<PivotField> readPivots( List<NamedList> list )
+  {
+    ArrayList<PivotField> values = new ArrayList<PivotField>( list.size() );
+    for( NamedList nl : list ) {
+      // NOTE, this is cheating, but we know the order they are written in, so no need to check
+      String f = (String)nl.getVal( 0 );
+      Object v = nl.getVal( 1 );
+      int cnt = ((Integer)nl.getVal( 2 )).intValue();
+      List<PivotField> p = (nl.size()<4)?null:readPivots((List<NamedList>)nl.getVal(3) );
+      values.add( new PivotField( f, v, cnt, p ) );
+    }
+    return values;
   }
 
   //------------------------------------------------------
@@ -301,6 +327,10 @@ public class QueryResponse extends SolrResponseBase
   
   public List<FacetField> getFacetDates()   {
     return _facetDates;
+  }
+
+  public NamedList<List<PivotField>> getFacetPivot()   {
+    return _facetPivot;
   }
   
   /** get 

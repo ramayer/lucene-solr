@@ -23,8 +23,6 @@ import org.junit.Test;
 
 import java.util.regex.Pattern;
 
-import static org.junit.Assert.*;
-
 /**
  * Tests some basic functionality of the DisMaxRequestHandler
  */
@@ -34,7 +32,7 @@ public class DisMaxRequestHandlerTest extends SolrTestCaseJ4 {
     initCore("solrconfig.xml","schema.xml");
     lrf = h.getRequestFactory
       ("dismax", 0, 20,
-       "version","2.0",
+       CommonParams.VERSION,"2.2",
        "facet", "true",
        "facet.field","t_s"
        );
@@ -96,7 +94,7 @@ public class DisMaxRequestHandlerTest extends SolrTestCaseJ4 {
     assertQ("multi qf",
             req("q", "cool"
                 ,"qt", qt
-                ,"version", "2.0"
+                ,CommonParams.VERSION, "2.2"
                 ,"qf", "subject"
                 ,"qf", "features_t"
                 )
@@ -106,7 +104,7 @@ public class DisMaxRequestHandlerTest extends SolrTestCaseJ4 {
     assertQ("boost query",
             req("q", "cool stuff"
                 ,"qt", qt
-                ,"version", "2.0"
+                ,CommonParams.VERSION, "2.2"
                 ,"bq", "subject:hell^400"
                 )
             ,"//*[@numFound='3']"
@@ -118,7 +116,7 @@ public class DisMaxRequestHandlerTest extends SolrTestCaseJ4 {
     assertQ("multi boost query",
             req("q", "cool stuff"
                 ,"qt", qt
-                ,"version", "2.0"
+                ,CommonParams.VERSION, "2.2"
                 ,"bq", "subject:hell^400"
                 ,"bq", "subject:cool^4"
                 , CommonParams.DEBUG_QUERY, "true"
@@ -178,7 +176,7 @@ public class DisMaxRequestHandlerTest extends SolrTestCaseJ4 {
     Pattern p_bool = Pattern.compile("\\(subject:hell\\s*subject:cool\\)");
     String resp = h.query(req("q", "cool stuff"
                 ,"qt", "dismax"
-                ,"version", "2.0"
+                ,CommonParams.VERSION, "2.2"
                 ,"bq", "subject:hell OR subject:cool"
                 ,CommonParams.DEBUG_QUERY, "true"
                               ));
@@ -187,7 +185,7 @@ public class DisMaxRequestHandlerTest extends SolrTestCaseJ4 {
 
     resp = h.query(req("q", "cool stuff"
                 ,"qt", "dismax"
-                ,"version", "2.0"
+                ,CommonParams.VERSION, "2.2"
                 ,"bq", "subject:hell OR subject:cool"
                 ,"bq",""
                 ,CommonParams.DEBUG_QUERY, "true"
@@ -195,18 +193,6 @@ public class DisMaxRequestHandlerTest extends SolrTestCaseJ4 {
     assertTrue(p.matcher(resp).find());
     assertTrue(p_bool.matcher(resp).find());
 
-  }
-
-  @Test
-  public void testOldStyleDefaults() throws Exception {
-
-    lrf = h.getRequestFactory
-      ("dismaxOldStyleDefaults", 0, 20,
-       "version","2.0",
-       "facet", "true",
-       "facet.field","t_s"
-       );
-    doTestSomeStuff("dismaxOldStyleDefaults");
   }
 
   @Test

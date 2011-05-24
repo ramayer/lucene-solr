@@ -19,7 +19,6 @@ package org.apache.lucene.search;
 
 import java.util.Calendar;
 import java.util.GregorianCalendar;
-import java.util.Random;
 
 import org.apache.lucene.document.Document;
 import org.apache.lucene.document.Field;
@@ -30,11 +29,10 @@ import org.apache.lucene.search.BooleanClause;
 import org.apache.lucene.search.BooleanQuery;
 import org.apache.lucene.search.CachingWrapperFilter;
 import org.apache.lucene.search.Filter;
-import org.apache.lucene.search.IndexSearcher;
 import org.apache.lucene.search.MatchAllDocsQuery;
 import org.apache.lucene.search.Query;
 import org.apache.lucene.search.QueryWrapperFilter;
-import org.apache.lucene.search.Searcher;
+import org.apache.lucene.search.IndexSearcher;
 import org.apache.lucene.search.TermQuery;
 import org.apache.lucene.search.TermRangeFilter;
 import org.apache.lucene.search.TopDocs;
@@ -53,13 +51,10 @@ public class ChainedFilterTest extends LuceneTestCase {
   private QueryWrapperFilter bobFilter;
   private QueryWrapperFilter sueFilter;
 
-  private Random random;
-
   @Override
-  protected void setUp() throws Exception {
+  public void setUp() throws Exception {
     super.setUp();
-    random = newRandom();
-    directory = newDirectory(random);
+    directory = newDirectory();
     RandomIndexWriter writer = new RandomIndexWriter(random, directory);
     Calendar cal = new GregorianCalendar();
     cal.clear();
@@ -67,9 +62,9 @@ public class ChainedFilterTest extends LuceneTestCase {
 
     for (int i = 0; i < MAX; i++) {
       Document doc = new Document();
-      doc.add(new Field("key", "" + (i + 1), Field.Store.YES, Field.Index.NOT_ANALYZED));
-      doc.add(new Field("owner", (i < MAX / 2) ? "bob" : "sue", Field.Store.YES, Field.Index.NOT_ANALYZED));
-      doc.add(new Field("date", cal.getTime().toString(), Field.Store.YES, Field.Index.NOT_ANALYZED));
+      doc.add(newField("key", "" + (i + 1), Field.Store.YES, Field.Index.NOT_ANALYZED));
+      doc.add(newField("owner", (i < MAX / 2) ? "bob" : "sue", Field.Store.YES, Field.Index.NOT_ANALYZED));
+      doc.add(newField("date", cal.getTime().toString(), Field.Store.YES, Field.Index.NOT_ANALYZED));
       writer.addDocument(doc);
 
       cal.add(Calendar.DATE, 1);
@@ -77,7 +72,7 @@ public class ChainedFilterTest extends LuceneTestCase {
     reader = writer.getReader();
     writer.close();
 
-    searcher = new IndexSearcher(reader);
+    searcher = newSearcher(reader);
 
     // query for everything to make life easier
     BooleanQuery bq = new BooleanQuery();
@@ -89,7 +84,7 @@ public class ChainedFilterTest extends LuceneTestCase {
     //Date pastTheEnd = parseDate("2099 Jan 1");
     // dateFilter = DateFilter.Before("date", pastTheEnd);
     // just treat dates as strings and select the whole range for now...
-    dateFilter = new TermRangeFilter("date","","ZZZZ",true,true);
+    dateFilter = TermRangeFilter.newStringRange("date","","ZZZZ",true,true);
 
     bobFilter = new QueryWrapperFilter(
         new TermQuery(new Term("owner", "bob")));
@@ -194,12 +189,12 @@ public class ChainedFilterTest extends LuceneTestCase {
   */
   
   public void testWithCachingFilter() throws Exception {
-    Directory dir = newDirectory(random);
+    Directory dir = newDirectory();
     RandomIndexWriter writer = new RandomIndexWriter(random, dir);
     IndexReader reader = writer.getReader();
     writer.close();
   
-    Searcher searcher = new IndexSearcher(reader);
+    IndexSearcher searcher = newSearcher(reader);
   
     Query query = new TermQuery(new Term("none", "none"));
   

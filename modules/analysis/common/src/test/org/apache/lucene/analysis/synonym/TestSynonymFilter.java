@@ -17,24 +17,20 @@
 
 package org.apache.lucene.analysis.synonym;
 
-import org.apache.lucene.analysis.BaseTokenStreamTestCase;
-import org.apache.lucene.analysis.Token;
-import org.apache.lucene.analysis.TokenStream;
-import org.apache.lucene.analysis.Tokenizer;
-import org.apache.lucene.analysis.core.WhitespaceTokenizer;
-import org.apache.lucene.analysis.tokenattributes.FlagsAttribute;
-import org.apache.lucene.analysis.tokenattributes.OffsetAttribute;
-import org.apache.lucene.analysis.tokenattributes.PayloadAttribute;
-import org.apache.lucene.analysis.tokenattributes.PositionIncrementAttribute;
-import org.apache.lucene.analysis.tokenattributes.CharTermAttribute;
-import org.apache.lucene.analysis.tokenattributes.TypeAttribute;
-
 import java.io.IOException;
 import java.io.StringReader;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.List;
+
+import org.apache.lucene.analysis.BaseTokenStreamTestCase;
+import org.apache.lucene.analysis.MockTokenizer;
+import org.apache.lucene.analysis.Token;
+import org.apache.lucene.analysis.TokenStream;
+import org.apache.lucene.analysis.Tokenizer;
+import org.apache.lucene.analysis.core.WhitespaceTokenizer;
+import org.apache.lucene.analysis.tokenattributes.*;
 
 /**
  * @version $Id$
@@ -48,14 +44,14 @@ public class TestSynonymFilter extends BaseTokenStreamTestCase {
 
   static void assertTokenizesTo(SynonymMap dict, String input,
       String expected[]) throws IOException {
-    Tokenizer tokenizer = new WhitespaceTokenizer(TEST_VERSION_CURRENT, new StringReader(input));
+    Tokenizer tokenizer = new MockTokenizer(new StringReader(input), MockTokenizer.WHITESPACE, false);
     SynonymFilter stream = new SynonymFilter(tokenizer, dict);
     assertTokenStreamContents(stream, expected);
   }
   
   static void assertTokenizesTo(SynonymMap dict, String input,
       String expected[], int posIncs[]) throws IOException {
-    Tokenizer tokenizer = new WhitespaceTokenizer(TEST_VERSION_CURRENT, new StringReader(input));
+    Tokenizer tokenizer = new MockTokenizer(new StringReader(input), MockTokenizer.WHITESPACE, false);
     SynonymFilter stream = new SynonymFilter(tokenizer, dict);
     assertTokenStreamContents(stream, expected, posIncs);
   }
@@ -332,8 +328,9 @@ public class TestSynonymFilter extends BaseTokenStreamTestCase {
    * a/b   => tokens a and b share the same spot (b.positionIncrement=0)
    * a,3/b/c => a,b,c all share same position (a.positionIncrement=3, b.positionIncrement=0, c.positionIncrement=0)
    * a,1,10,11  => "a" with positionIncrement=1, startOffset=10, endOffset=11
-   * @deprecated does not support attributes api
+   * @deprecated (3.0) does not support attributes api
    */
+  @Deprecated
   private List<Token> tokens(String str) {
     String[] arr = str.split(" ");
     List<Token> result = new ArrayList<Token>();
@@ -377,8 +374,9 @@ public class TestSynonymFilter extends BaseTokenStreamTestCase {
   }
   
   /**
-   * @deprecated does not support custom attributes
+   * @deprecated (3.0) does not support custom attributes
    */
+  @Deprecated
   private static class IterTokenStream extends TokenStream {
     final Token tokens[];
     int index = 0;
@@ -398,6 +396,7 @@ public class TestSynonymFilter extends BaseTokenStreamTestCase {
       this(tokens.toArray(new Token[tokens.size()]));
     }
     
+    @Override
     public boolean incrementToken() throws IOException {
       if (index >= tokens.length)
         return false;

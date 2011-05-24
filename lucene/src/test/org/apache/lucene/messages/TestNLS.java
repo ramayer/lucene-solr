@@ -19,11 +19,11 @@ package org.apache.lucene.messages;
 
 import java.util.Locale;
 
-import org.apache.lucene.util.LocalizedTestCase;
+import org.apache.lucene.util.LuceneTestCase;
 
 /**
  */
-public class TestNLS extends LocalizedTestCase {
+public class TestNLS extends LuceneTestCase {
   public void testMessageLoading() {
     Message invalidSyntax = new MessageImpl(
         MessagesTestBundle.Q0001E_INVALID_SYNTAX, "XXX");

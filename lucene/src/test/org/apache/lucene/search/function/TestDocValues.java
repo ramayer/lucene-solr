@@ -17,15 +17,13 @@ package org.apache.lucene.search.function;
  * limitations under the License.
  */
 
-import org.apache.lucene.util.LuceneTestCaseJ4;
+import org.apache.lucene.util.LuceneTestCase;
 import org.junit.Test;
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertTrue;
 
 /**
  * DocValues TestCase  
  */
-public class TestDocValues extends LuceneTestCaseJ4 {
+public class TestDocValues extends LuceneTestCase {
 
   @Test
   public void testGetMinValue() {

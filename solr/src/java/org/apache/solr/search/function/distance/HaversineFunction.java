@@ -16,10 +16,11 @@ package org.apache.solr.search.function.distance;
  * limitations under the License.
  */
 
-import org.apache.lucene.index.IndexReader;
-import org.apache.lucene.search.Searcher;
+import org.apache.lucene.index.IndexReader.AtomicReaderContext;
+import org.apache.lucene.search.IndexSearcher;
 import org.apache.lucene.spatial.DistanceUtils;
 import org.apache.solr.common.SolrException;
+import org.apache.solr.search.function.DoubleDocValues;
 import org.apache.solr.search.function.MultiValueSource;
 import org.apache.solr.search.function.DocValues;
 import org.apache.solr.search.function.ValueSource;
@@ -95,31 +96,15 @@ public class HaversineFunction extends ValueSource {
 
 
   @Override
-  public DocValues getValues(Map context, IndexReader reader) throws IOException {
-    final DocValues vals1 = p1.getValues(context, reader);
+  public DocValues getValues(Map context, AtomicReaderContext readerContext) throws IOException {
+    final DocValues vals1 = p1.getValues(context, readerContext);
 
-    final DocValues vals2 = p2.getValues(context, reader);
-    return new DocValues() {
-      public float floatVal(int doc) {
-        return (float) doubleVal(doc);
-      }
-
-      public int intVal(int doc) {
-        return (int) doubleVal(doc);
-      }
-
-      public long longVal(int doc) {
-        return (long) doubleVal(doc);
-      }
-
+    final DocValues vals2 = p2.getValues(context, readerContext);
+    return new DoubleDocValues(this) {
+      @Override
       public double doubleVal(int doc) {
-        return (double) distance(doc, vals1, vals2);
+        return distance(doc, vals1, vals2);
       }
-
-      public String strVal(int doc) {
-        return Double.toString(doubleVal(doc));
-      }
-
       @Override
       public String toString(int doc) {
         StringBuilder sb = new StringBuilder();
@@ -132,7 +117,7 @@ public class HaversineFunction extends ValueSource {
   }
 
   @Override
-  public void createWeight(Map context, Searcher searcher) throws IOException {
+  public void createWeight(Map context, IndexSearcher searcher) throws IOException {
     p1.createWeight(context, searcher);
     p2.createWeight(context, searcher);
 
@@ -159,6 +144,7 @@ public class HaversineFunction extends ValueSource {
     return result;
   }
 
+  @Override
   public String description() {
     StringBuilder sb = new StringBuilder();
     sb.append(name()).append('(');

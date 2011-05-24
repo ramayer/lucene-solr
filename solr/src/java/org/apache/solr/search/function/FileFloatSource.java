@@ -16,22 +16,38 @@
  */
 package org.apache.solr.search.function;
 
-import org.apache.lucene.index.IndexReader;
-import org.apache.lucene.index.DocsEnum;
-import org.apache.lucene.index.TermsEnum;
-import org.apache.lucene.index.MultiFields;
-import org.apache.lucene.util.StringHelper;
-import org.apache.lucene.util.Bits;
-import org.apache.lucene.util.BytesRef;
-import org.apache.solr.core.SolrCore;
-import org.apache.solr.schema.SchemaField;
-import org.apache.solr.schema.FieldType;
-import org.apache.solr.search.QParser;
-import org.apache.solr.search.SolrIndexReader;
-import org.apache.solr.util.VersionedFile;
+import java.io.BufferedReader;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.WeakHashMap;
 
-import java.io.*;
-import java.util.*;
+import org.apache.lucene.index.DocsEnum;
+import org.apache.lucene.index.IndexReader;
+import org.apache.lucene.index.MultiFields;
+import org.apache.lucene.index.TermsEnum;
+import org.apache.lucene.index.IndexReader.AtomicReaderContext;
+import org.apache.lucene.index.IndexReader.ReaderContext;
+import org.apache.lucene.util.BytesRef;
+import org.apache.lucene.util.ReaderUtil;
+import org.apache.lucene.util.StringHelper;
+import org.apache.solr.core.SolrCore;
+import org.apache.solr.handler.RequestHandlerBase;
+import org.apache.solr.handler.RequestHandlerUtils;
+import org.apache.solr.request.SolrQueryRequest;
+import org.apache.solr.response.SolrQueryResponse;
+import org.apache.solr.schema.FieldType;
+import org.apache.solr.schema.SchemaField;
+import org.apache.solr.search.QParser;
+import org.apache.solr.update.processor.UpdateRequestProcessor;
+import org.apache.solr.util.VersionedFile;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Obtains float field values from an external file.
@@ -52,50 +68,32 @@ public class FileFloatSource extends ValueSource {
     this.dataDir = parser.getReq().getCore().getDataDir();
   }
 
+  @Override
   public String description() {
     return "float(" + field + ')';
   }
 
-  public DocValues getValues(Map context, IndexReader reader) throws IOException {
+  @Override
+  public DocValues getValues(Map context, AtomicReaderContext readerContext) throws IOException {
     int offset = 0;
-    if (reader instanceof SolrIndexReader) {
-      SolrIndexReader r = (SolrIndexReader)reader;
-      while (r.getParent() != null) {
-        offset += r.getBase();
-        r = r.getParent();
-      }
-      reader = r;
-    }
+    ReaderContext topLevelContext = ReaderUtil.getTopLevelContext(readerContext);
     final int off = offset;
 
-    final float[] arr = getCachedFloats(reader);
-    return new DocValues() {
+    final float[] arr = getCachedFloats(topLevelContext.reader);
+    return new FloatDocValues(this) {
+      @Override
       public float floatVal(int doc) {
         return arr[doc + off];
       }
 
-      public int intVal(int doc) {
-        return (int)arr[doc + off];
-      }
-
-      public long longVal(int doc) {
-        return (long)arr[doc + off];
-      }
-
-      public double doubleVal(int doc) {
-        return (double)arr[doc + off];
-      }
-
-      public String strVal(int doc) {
-        return Float.toString(arr[doc + off]);
-      }
-
-      public String toString(int doc) {
-        return description() + '=' + floatVal(doc);
+      @Override
+      public Object objectVal(int doc) {
+        return floatVal(doc);   // TODO: keep track of missing values
       }
     };
   }
 
+  @Override
   public boolean equals(Object o) {
     if (o.getClass() !=  FileFloatSource.class) return false;
     FileFloatSource other = (FileFloatSource)o;
@@ -105,14 +103,20 @@ public class FileFloatSource extends ValueSource {
             && this.dataDir.equals(other.dataDir);
   }
 
+  @Override
   public int hashCode() {
     return FileFloatSource.class.hashCode() + field.getName().hashCode();
   };
 
+  @Override
   public String toString() {
     return "FileFloatSource(field="+field.getName()+",keyField="+keyField.getName()
             + ",defVal="+defVal+",dataDir="+dataDir+")";
 
+  }
+  
+  public static void resetCache(){
+    floatCache.resetCache();
   }
 
   private final float[] getCachedFloats(IndexReader reader) {
@@ -120,6 +124,7 @@ public class FileFloatSource extends ValueSource {
   }
 
   static Cache floatCache = new Cache() {
+    @Override
     protected Object createValue(IndexReader reader, Object key) {
       return getFloats(((Entry)key).ffs, reader);
     }
@@ -164,6 +169,14 @@ public class FileFloatSource extends ValueSource {
 
       return value;
     }
+    
+    public void resetCache(){
+      synchronized(readerCache){
+        // Map.clear() is optional and can throw UnsipportedOperationException,
+        // but readerCache is WeakHashMap and it supports clear().
+        readerCache.clear();
+      }
+    }
   }
 
   static Object onlyForTesting; // set to the last value
@@ -179,12 +192,14 @@ public class FileFloatSource extends ValueSource {
       this.ffs = ffs;
     }
 
+    @Override
     public boolean equals(Object o) {
       if (!(o instanceof Entry)) return false;
       Entry other = (Entry)o;
       return ffs.equals(other.ffs);
     }
 
+    @Override
     public int hashCode() {
       return ffs.hashCode();
     }
@@ -284,5 +299,44 @@ public class FileFloatSource extends ValueSource {
     return vals;
   }
 
+  public static class ReloadCacheRequestHandler extends RequestHandlerBase {
+    
+    static final Logger log = LoggerFactory.getLogger(ReloadCacheRequestHandler.class);
 
+    @Override
+    public void handleRequestBody(SolrQueryRequest req, SolrQueryResponse rsp)
+        throws Exception {
+      FileFloatSource.resetCache();
+      log.debug("readerCache has been reset.");
+
+      UpdateRequestProcessor processor =
+        req.getCore().getUpdateProcessingChain(null).createProcessor(req, rsp);
+      try{
+        RequestHandlerUtils.handleCommit(req, processor, req.getParams(), true);
+      }
+      finally{
+        processor.finish();
+      }
+    }
+
+    @Override
+    public String getDescription() {
+      return "Reload readerCache request handler";
+    }
+
+    @Override
+    public String getSource() {
+      return "$URL$";
+    }
+
+    @Override
+    public String getSourceId() {
+      return "$Id$";
+    }
+
+    @Override
+    public String getVersion() {
+      return "$Revision$";
+    }    
+  }
 }

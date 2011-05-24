@@ -18,12 +18,11 @@ package org.apache.lucene.store.instantiated;
 
 import java.io.IOException;
 import java.util.Arrays;
-import java.util.Random;
-
 import org.apache.lucene.analysis.MockAnalyzer;
 import org.apache.lucene.index.IndexReader;
 import org.apache.lucene.index.IndexWriter;
 import org.apache.lucene.index.MultiFields;
+import org.apache.lucene.index.MultiNorms;
 import org.apache.lucene.index.Term;
 import org.apache.lucene.search.IndexSearcher;
 import org.apache.lucene.search.TermQuery;
@@ -38,7 +37,7 @@ public class TestEmptyIndex extends LuceneTestCase {
     InstantiatedIndex ii = new InstantiatedIndex();
 
     IndexReader r = new InstantiatedIndexReader(ii);
-    IndexSearcher s = new IndexSearcher(r);
+    IndexSearcher s = newSearcher(r);
 
     TopDocs td = s.search(new TermQuery(new Term("foo", "bar")), 1);
 
@@ -59,9 +58,8 @@ public class TestEmptyIndex extends LuceneTestCase {
     ii.close();
 
     // make sure a Directory acts the same
-    Random random = newRandom();
-    Directory d = newDirectory(random);
-    new IndexWriter(d, newIndexWriterConfig(random, TEST_VERSION_CURRENT, new MockAnalyzer())).close();
+    Directory d = newDirectory();
+    new IndexWriter(d, newIndexWriterConfig(TEST_VERSION_CURRENT, new MockAnalyzer(random))).close();
     r = IndexReader.open(d, false);
     testNorms(r);
     r.close();
@@ -70,16 +68,9 @@ public class TestEmptyIndex extends LuceneTestCase {
   }
 
   private void testNorms(IndexReader r) throws IOException {
-    byte[] norms;
-    norms = r.norms("foo");
+    byte[] norms = MultiNorms.norms(r, "foo");
     if (norms != null) {
       assertEquals(0, norms.length);
-      norms = new byte[10];
-      Arrays.fill(norms, (byte)10);
-      r.norms("foo", norms, 10);
-      for (byte b : norms) {
-        assertEquals((byte)10, b);
-      }
     }
   }
 
@@ -92,9 +83,8 @@ public class TestEmptyIndex extends LuceneTestCase {
     ii.close();
 
     // make sure a Directory acts the same
-    Random random = newRandom();
-    Directory d = newDirectory(random);
-    new IndexWriter(d, newIndexWriterConfig(random, TEST_VERSION_CURRENT, new MockAnalyzer())).close();
+    Directory d = newDirectory();
+    new IndexWriter(d, newIndexWriterConfig(TEST_VERSION_CURRENT, new MockAnalyzer(random))).close();
     r = IndexReader.open(d, false);
     termsEnumTest(r);
     r.close();

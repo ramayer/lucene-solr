@@ -21,66 +21,24 @@ package org.apache.lucene.util;
  * least element can always be found in constant time.  Put()'s and pop()'s
  * require log(size) time.
  *
- * <p><b>NOTE</b>: This class pre-allocates a full array of
- * length <code>maxSize+1</code>, in {@link #initialize}.
+ * <p><b>NOTE</b>: This class will pre-allocate a full array of
+ * length <code>maxSize+1</code> if instantiated via the
+ * {@link #PriorityQueue(int,boolean)} constructor with
+ * <code>prepopulate</code> set to <code>true</code>.
  * 
  * @lucene.internal
 */
 public abstract class PriorityQueue<T> {
   private int size;
-  private int maxSize;
-  protected T[] heap;
+  private final int maxSize;
+  private final T[] heap;
 
-  /** Determines the ordering of objects in this priority queue.  Subclasses
-    must define this one method. */
-  protected abstract boolean lessThan(T a, T b);
-
-  /**
-   * This method can be overridden by extending classes to return a sentinel
-   * object which will be used by {@link #initialize(int)} to fill the queue, so
-   * that the code which uses that queue can always assume it's full and only
-   * change the top without attempting to insert any new object.<br>
-   * 
-   * Those sentinel values should always compare worse than any non-sentinel
-   * value (i.e., {@link #lessThan} should always favor the
-   * non-sentinel values).<br>
-   * 
-   * By default, this method returns false, which means the queue will not be
-   * filled with sentinel values. Otherwise, the value returned will be used to
-   * pre-populate the queue. Adds sentinel values to the queue.<br>
-   * 
-   * If this method is extended to return a non-null value, then the following
-   * usage pattern is recommended:
-   * 
-   * <pre>
-   * // extends getSentinelObject() to return a non-null value.
-   * PriorityQueue<MyObject> pq = new MyQueue<MyObject>(numHits);
-   * // save the 'top' element, which is guaranteed to not be null.
-   * MyObject pqTop = pq.top();
-   * &lt;...&gt;
-   * // now in order to add a new element, which is 'better' than top (after 
-   * // you've verified it is better), it is as simple as:
-   * pqTop.change().
-   * pqTop = pq.updateTop();
-   * </pre>
-   * 
-   * <b>NOTE:</b> if this method returns a non-null value, it will be called by
-   * {@link #initialize(int)} {@link #size()} times, relying on a new object to
-   * be returned and will not check if it's null again. Therefore you should
-   * ensure any call to this method creates a new instance and behaves
-   * consistently, e.g., it cannot return null if it previously returned
-   * non-null.
-   * 
-   * @return the sentinel object to use to pre-populate the queue, or null if
-   *         sentinel objects are not supported.
-   */
-  protected T getSentinelObject() {
-    return null;
+  public PriorityQueue(int maxSize) {
+    this(maxSize, true);
   }
 
-  /** Subclass constructors must call this. */
   @SuppressWarnings("unchecked")
-  protected final void initialize(int maxSize) {
+  public PriorityQueue(int maxSize, boolean prepopulate) {
     size = 0;
     int heapSize;
     if (0 == maxSize)
@@ -106,15 +64,67 @@ public abstract class PriorityQueue<T> {
     heap = (T[]) new Object[heapSize]; // T is unbounded type, so this unchecked cast works always
     this.maxSize = maxSize;
     
-    // If sentinel objects are supported, populate the queue with them
-    T sentinel = getSentinelObject();
-    if (sentinel != null) {
-      heap[1] = sentinel;
-      for (int i = 2; i < heap.length; i++) {
-        heap[i] = getSentinelObject();
+    if (prepopulate) {
+      // If sentinel objects are supported, populate the queue with them
+      T sentinel = getSentinelObject();
+      if (sentinel != null) {
+        heap[1] = sentinel;
+        for (int i = 2; i < heap.length; i++) {
+          heap[i] = getSentinelObject();
+        }
+        size = maxSize;
       }
-      size = maxSize;
     }
+  }
+
+  /** Determines the ordering of objects in this priority queue.  Subclasses
+   *  must define this one method.
+   *  @return <code>true</code> iff parameter <tt>a</tt> is less than parameter <tt>b</tt>.
+   */
+  protected abstract boolean lessThan(T a, T b);
+
+  /**
+   * This method can be overridden by extending classes to return a sentinel
+   * object which will be used by the {@link PriorityQueue#PriorityQueue(int,boolean)} 
+   * constructor to fill the queue, so that the code which uses that queue can always
+   * assume it's full and only change the top without attempting to insert any new
+   * object.<br>
+   * 
+   * Those sentinel values should always compare worse than any non-sentinel
+   * value (i.e., {@link #lessThan} should always favor the
+   * non-sentinel values).<br>
+   * 
+   * By default, this method returns false, which means the queue will not be
+   * filled with sentinel values. Otherwise, the value returned will be used to
+   * pre-populate the queue. Adds sentinel values to the queue.<br>
+   * 
+   * If this method is extended to return a non-null value, then the following
+   * usage pattern is recommended:
+   * 
+   * <pre>
+   * // extends getSentinelObject() to return a non-null value.
+   * PriorityQueue<MyObject> pq = new MyQueue<MyObject>(numHits);
+   * // save the 'top' element, which is guaranteed to not be null.
+   * MyObject pqTop = pq.top();
+   * &lt;...&gt;
+   * // now in order to add a new element, which is 'better' than top (after 
+   * // you've verified it is better), it is as simple as:
+   * pqTop.change().
+   * pqTop = pq.updateTop();
+   * </pre>
+   * 
+   * <b>NOTE:</b> if this method returns a non-null value, it will be called by
+   * the {@link PriorityQueue#PriorityQueue(int,boolean)} constructor 
+   * {@link #size()} times, relying on a new object to be returned and will not
+   * check if it's null again. Therefore you should ensure any call to this
+   * method creates a new instance and behaves consistently, e.g., it cannot
+   * return null if it previously returned non-null.
+   * 
+   * @return the sentinel object to use to pre-populate the queue, or null if
+   *         sentinel objects are not supported.
+   */
+  protected T getSentinelObject() {
+    return null;
   }
 
   /**
@@ -244,5 +254,12 @@ public abstract class PriorityQueue<T> {
       }
     }
     heap[i] = node;				  // install saved node
+  }
+  
+  /** This method returns the internal heap array as Object[].
+   * @lucene.internal
+   */
+  protected final Object[] getHeapArray() {
+    return (Object[]) heap;
   }
 }

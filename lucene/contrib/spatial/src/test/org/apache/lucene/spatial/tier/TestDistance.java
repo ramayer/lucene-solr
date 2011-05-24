@@ -17,19 +17,21 @@
 package org.apache.lucene.spatial.tier;
 
 import java.io.IOException;
-import java.util.Random;
 
 import org.apache.lucene.analysis.MockAnalyzer;
 import org.apache.lucene.document.Document;
 import org.apache.lucene.document.Field;
 import org.apache.lucene.document.NumericField;
+import org.apache.lucene.index.IndexReader.AtomicReaderContext;
 import org.apache.lucene.index.IndexWriter;
 import org.apache.lucene.index.Term;
 import org.apache.lucene.index.IndexReader;
 import org.apache.lucene.search.QueryWrapperFilter;
 import org.apache.lucene.search.MatchAllDocsQuery;
 import org.apache.lucene.util.LuceneTestCase;
+import org.apache.lucene.util.ReaderUtil;
 import org.apache.lucene.store.Directory;
+
 
 public class TestDistance extends LuceneTestCase {
   
@@ -42,17 +44,16 @@ public class TestDistance extends LuceneTestCase {
   private IndexWriter writer;
   
   @Override
-  protected void setUp() throws Exception {
+  public void setUp() throws Exception {
     super.setUp();
-    Random random = newRandom();
-    directory = newDirectory(random);
-    writer = new IndexWriter(directory, newIndexWriterConfig(random, TEST_VERSION_CURRENT, new MockAnalyzer()));
+    directory = newDirectory();
+    writer = new IndexWriter(directory, newIndexWriterConfig(TEST_VERSION_CURRENT, new MockAnalyzer(random)));
     addData(writer);
     
   }
 
   @Override
-  protected void tearDown() throws Exception {
+  public void tearDown() throws Exception {
     writer.close();
     directory.close();
     super.tearDown();
@@ -62,14 +63,14 @@ public class TestDistance extends LuceneTestCase {
     
     Document doc = new Document();
     
-    doc.add(new Field("name", name,Field.Store.YES, Field.Index.ANALYZED));
+    doc.add(newField("name", name,Field.Store.YES, Field.Index.ANALYZED));
     
     // convert the lat / long to lucene fields
     doc.add(new NumericField(latField, Integer.MAX_VALUE, Field.Store.YES, true).setDoubleValue(lat));
     doc.add(new NumericField(lngField, Integer.MAX_VALUE,Field.Store.YES, true).setDoubleValue(lng));
     
     // add a default meta field to make searching all documents easy 
-    doc.add(new Field("metafile", "doc",Field.Store.YES, Field.Index.ANALYZED));
+    doc.add(newField("metafile", "doc",Field.Store.YES, Field.Index.ANALYZED));
     writer.addDocument(doc);
     
   }
@@ -98,13 +99,13 @@ public class TestDistance extends LuceneTestCase {
 
   public void testLatLongFilterOnDeletedDocs() throws Exception {
     writer.deleteDocuments(new Term("name", "Potomac"));
-    IndexReader r = writer.getReader();
+    IndexReader r = IndexReader.open(writer, true);
     LatLongDistanceFilter f = new LatLongDistanceFilter(new QueryWrapperFilter(new MatchAllDocsQuery()),
                                                         lat, lng, 1.0, latField, lngField);
 
-    IndexReader[] readers = r.getSequentialSubReaders();
-    for(int i=0;i<readers.length;i++) {
-      f.getDocIdSet(readers[i]);
+    AtomicReaderContext[] leaves = ReaderUtil.leaves(r.getTopReaderContext());
+    for (int i = 0; i < leaves.length; i++) {
+      f.getDocIdSet(leaves[i]);
     }
     r.close();
   }

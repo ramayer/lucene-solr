@@ -22,7 +22,6 @@ import java.io.Reader;
 import java.util.Arrays;
 import java.util.Iterator;
 import java.util.Map;
-import java.util.Random;
 import java.util.SortedSet;
 
 import org.apache.lucene.analysis.Analyzer;
@@ -49,10 +48,6 @@ public class TestTermVectorsReader extends LuceneTestCase {
   private FieldInfos fieldInfos = new FieldInfos();
   private static int TERM_FREQ = 3;
 
-  public TestTermVectorsReader(String s) {
-    super(s);
-  }
-  
   private class TestToken implements Comparable<TestToken> {
     String text;
     int pos;
@@ -66,7 +61,7 @@ public class TestTermVectorsReader extends LuceneTestCase {
   TestToken[] tokens = new TestToken[testTerms.length * TERM_FREQ];
 
   @Override
-  protected void setUp() throws Exception {
+  public void setUp() throws Exception {
     super.setUp();
     /*
     for (int i = 0; i < testFields.length; i++) {
@@ -94,12 +89,13 @@ public class TestTermVectorsReader extends LuceneTestCase {
     }
     Arrays.sort(tokens);
 
-    Random random = newRandom();
-    dir = newDirectory(random);
-    IndexWriter writer = new IndexWriter(dir, newIndexWriterConfig(random, TEST_VERSION_CURRENT, new MyAnalyzer()).setMaxBufferedDocs(-1));
-    ((LogMergePolicy) writer.getConfig().getMergePolicy()).setUseCompoundFile(false);
-    ((LogMergePolicy) writer.getConfig().getMergePolicy()).setUseCompoundDocStore(false);
-    ((LogMergePolicy) writer.getConfig().getMergePolicy()).setMergeFactor(10);
+    dir = newDirectory();
+    IndexWriter writer = new IndexWriter(
+        dir,
+        newIndexWriterConfig(TEST_VERSION_CURRENT, new MyAnalyzer()).
+            setMaxBufferedDocs(-1).
+            setMergePolicy(newLogMergePolicy(false, 10))
+    );
 
     Document doc = new Document();
     for(int i=0;i<testFields.length;i++) {
@@ -127,7 +123,7 @@ public class TestTermVectorsReader extends LuceneTestCase {
   }
   
   @Override
-  protected void tearDown() throws Exception {
+  public void tearDown() throws Exception {
     dir.close();
     super.tearDown();
   }

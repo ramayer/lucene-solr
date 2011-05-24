@@ -42,14 +42,14 @@ public class TestLockFactory extends LuceneTestCase {
     // methods are called at the right time, locks are created, etc.
 
     public void testCustomLockFactory() throws IOException {
-        Directory dir = new MockDirectoryWrapper(new RAMDirectory());
+        Directory dir = new MockDirectoryWrapper(random, new RAMDirectory());
         MockLockFactory lf = new MockLockFactory();
         dir.setLockFactory(lf);
 
         // Lock prefix should have been set:
         assertTrue("lock prefix was not set by the RAMDirectory", lf.lockPrefixSet);
 
-        IndexWriter writer = new IndexWriter(dir, new IndexWriterConfig(TEST_VERSION_CURRENT, new MockAnalyzer()));
+        IndexWriter writer = new IndexWriter(dir, new IndexWriterConfig(TEST_VERSION_CURRENT, new MockAnalyzer(random)));
 
         // add 100 documents (so that commit lock is used)
         for (int i = 0; i < 100; i++) {
@@ -75,19 +75,19 @@ public class TestLockFactory extends LuceneTestCase {
     // exceptions raised:
     // Verify: NoLockFactory allows two IndexWriters
     public void testRAMDirectoryNoLocking() throws IOException {
-        Directory dir = new MockDirectoryWrapper(new RAMDirectory());
+        Directory dir = new MockDirectoryWrapper(random, new RAMDirectory());
         dir.setLockFactory(NoLockFactory.getNoLockFactory());
 
         assertTrue("RAMDirectory.setLockFactory did not take",
                    NoLockFactory.class.isInstance(dir.getLockFactory()));
 
-        IndexWriter writer = new IndexWriter(dir, new IndexWriterConfig(TEST_VERSION_CURRENT, new MockAnalyzer()));
+        IndexWriter writer = new IndexWriter(dir, new IndexWriterConfig(TEST_VERSION_CURRENT, new MockAnalyzer(random)));
         writer.commit(); // required so the second open succeed 
         // Create a 2nd IndexWriter.  This is normally not allowed but it should run through since we're not
         // using any locks:
         IndexWriter writer2 = null;
         try {
-            writer2 = new IndexWriter(dir, new IndexWriterConfig(TEST_VERSION_CURRENT, new MockAnalyzer()).setOpenMode(OpenMode.APPEND));
+            writer2 = new IndexWriter(dir, new IndexWriterConfig(TEST_VERSION_CURRENT, new MockAnalyzer(random)).setOpenMode(OpenMode.APPEND));
         } catch (Exception e) {
             e.printStackTrace(System.out);
             fail("Should not have hit an IOException with no locking");
@@ -107,12 +107,12 @@ public class TestLockFactory extends LuceneTestCase {
         assertTrue("RAMDirectory did not use correct LockFactory: got " + dir.getLockFactory(),
                    SingleInstanceLockFactory.class.isInstance(dir.getLockFactory()));
 
-        IndexWriter writer = new IndexWriter(dir, new IndexWriterConfig(TEST_VERSION_CURRENT, new MockAnalyzer()));
+        IndexWriter writer = new IndexWriter(dir, new IndexWriterConfig(TEST_VERSION_CURRENT, new MockAnalyzer(random)));
 
         // Create a 2nd IndexWriter.  This should fail:
         IndexWriter writer2 = null;
         try {
-            writer2 = new IndexWriter(dir, new IndexWriterConfig(TEST_VERSION_CURRENT, new MockAnalyzer()).setOpenMode(OpenMode.APPEND));
+            writer2 = new IndexWriter(dir, new IndexWriterConfig(TEST_VERSION_CURRENT, new MockAnalyzer(random)).setOpenMode(OpenMode.APPEND));
             fail("Should have hit an IOException with two IndexWriters on default SingleInstanceLockFactory");
         } catch (IOException e) {
         }
@@ -145,15 +145,15 @@ public class TestLockFactory extends LuceneTestCase {
     }
 
     public void _testStressLocks(LockFactory lockFactory, File indexDir) throws Exception {
-        FSDirectory fs1 = FSDirectory.open(indexDir, lockFactory);
+        Directory dir = newFSDirectory(indexDir, lockFactory);
 
         // First create a 1 doc index:
-        IndexWriter w = new IndexWriter(fs1, new IndexWriterConfig(TEST_VERSION_CURRENT, new MockAnalyzer()).setOpenMode(OpenMode.CREATE));
+        IndexWriter w = new IndexWriter(dir, new IndexWriterConfig(TEST_VERSION_CURRENT, new MockAnalyzer(random)).setOpenMode(OpenMode.CREATE));
         addDoc(w);
         w.close();
 
-        WriterThread writer = new WriterThread(100, fs1);
-        SearcherThread searcher = new SearcherThread(100, fs1);
+        WriterThread writer = new WriterThread(100, dir);
+        SearcherThread searcher = new SearcherThread(100, dir);
         writer.start();
         searcher.start();
 
@@ -164,6 +164,7 @@ public class TestLockFactory extends LuceneTestCase {
         assertTrue("IndexWriter hit unexpected exceptions", !writer.hitException);
         assertTrue("IndexSearcher hit unexpected exceptions", !searcher.hitException);
 
+        dir.close();
         // Cleanup
         _TestUtil.rmDir(indexDir);
     }
@@ -234,9 +235,9 @@ public class TestLockFactory extends LuceneTestCase {
 
       File fdir1 = _TestUtil.getTempDir("TestLockFactory.8");
       File fdir2 = _TestUtil.getTempDir("TestLockFactory.8.Lockdir");
-      Directory dir1 = FSDirectory.open(fdir1, new NativeFSLockFactory(fdir1));
+      Directory dir1 = newFSDirectory(fdir1, new NativeFSLockFactory(fdir1));
       // same directory, but locks are stored somewhere else. The prefix of the lock factory should != null
-      Directory dir2 = FSDirectory.open(fdir1, new NativeFSLockFactory(fdir2));
+      Directory dir2 = newFSDirectory(fdir1, new NativeFSLockFactory(fdir2));
 
       String prefix1 = dir1.getLockFactory().getLockPrefix();
       assertNull("Lock prefix for lockDir same as directory should be null", prefix1);
@@ -244,6 +245,8 @@ public class TestLockFactory extends LuceneTestCase {
       String prefix2 = dir2.getLockFactory().getLockPrefix();
       assertNotNull("Lock prefix for lockDir outside of directory should be not null", prefix2);
 
+      dir1.close();
+      dir2.close();
       _TestUtil.rmDir(fdir1);
       _TestUtil.rmDir(fdir2);
     }
@@ -254,12 +257,13 @@ public class TestLockFactory extends LuceneTestCase {
 
       // Make sure we get null prefix:
       File dirName = _TestUtil.getTempDir("TestLockFactory.10");
-      Directory dir = FSDirectory.open(dirName);
+      Directory dir = newFSDirectory(dirName);
 
       String prefix = dir.getLockFactory().getLockPrefix();
 
       assertTrue("Default lock prefix should be null", null == prefix);
 
+      dir.close();
       _TestUtil.rmDir(dirName);
     }
 
@@ -276,7 +280,7 @@ public class TestLockFactory extends LuceneTestCase {
             IndexWriter writer = null;
             for(int i=0;i<this.numIteration;i++) {
                 try {
-                    writer = new IndexWriter(dir, new IndexWriterConfig(TEST_VERSION_CURRENT, new MockAnalyzer()).setOpenMode(OpenMode.APPEND));
+                    writer = new IndexWriter(dir, new IndexWriterConfig(TEST_VERSION_CURRENT, new MockAnalyzer(random)).setOpenMode(OpenMode.APPEND));
                 } catch (IOException e) {
                     if (e.toString().indexOf(" timed out:") == -1) {
                         hitException = true;
@@ -405,7 +409,7 @@ public class TestLockFactory extends LuceneTestCase {
 
     private void addDoc(IndexWriter writer) throws IOException {
         Document doc = new Document();
-        doc.add(new Field("content", "aaa", Field.Store.NO, Field.Index.ANALYZED));
+        doc.add(newField("content", "aaa", Field.Store.NO, Field.Index.ANALYZED));
         writer.addDocument(doc);
     }
 }

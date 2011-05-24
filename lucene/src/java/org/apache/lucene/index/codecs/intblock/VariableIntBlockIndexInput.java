@@ -24,6 +24,7 @@ package org.apache.lucene.index.codecs.intblock;
 import java.io.IOException;
 
 import org.apache.lucene.index.codecs.sep.IntIndexInput;
+import org.apache.lucene.store.DataInput;
 import org.apache.lucene.store.IndexInput;
 import org.apache.lucene.util.IntsRef;
 
@@ -168,19 +169,19 @@ public abstract class VariableIntBlockIndexInput extends IntIndexInput {
     private int upto;
 
     @Override
-    public void read(final IndexInput indexIn, final boolean absolute) throws IOException {
+    public void read(final DataInput indexIn, final boolean absolute) throws IOException {
       if (absolute) {
+        upto = indexIn.readVInt();
         fp = indexIn.readVLong();
-        upto = indexIn.readByte()&0xFF;
       } else {
-        final long delta = indexIn.readVLong();
-        if (delta == 0) {
+        final int uptoDelta = indexIn.readVInt();
+        if ((uptoDelta & 1) == 1) {
           // same block
-          upto = indexIn.readByte()&0xFF;
+          upto += uptoDelta >>> 1;
         } else {
           // new block
-          fp += delta;
-          upto = indexIn.readByte()&0xFF;
+          upto = uptoDelta >>> 1;
+          fp += indexIn.readVLong();
         }
       }
       // TODO: we can't do this assert because non-causal

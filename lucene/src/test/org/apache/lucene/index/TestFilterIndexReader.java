@@ -19,8 +19,6 @@ package org.apache.lucene.index;
 
 
 import org.apache.lucene.util.LuceneTestCase;
-import junit.framework.TestSuite;
-import junit.textui.TestRunner;
 
 import org.apache.lucene.store.Directory;
 import org.apache.lucene.analysis.MockAnalyzer;
@@ -30,7 +28,6 @@ import org.apache.lucene.util.BytesRef;
 import org.apache.lucene.util.Bits;
 
 import java.io.IOException;
-import java.util.Random;
 
 public class TestFilterIndexReader extends LuceneTestCase {
 
@@ -41,9 +38,11 @@ public class TestFilterIndexReader extends LuceneTestCase {
       TestFields(Fields in) {
         super(in);
       }
+      @Override
       public FieldsEnum iterator() throws IOException {
         return new TestFieldsEnum(super.iterator());
       }
+      @Override
       public Terms terms(String field) throws IOException {
         return new TestTerms(super.terms(field));
       }
@@ -54,6 +53,7 @@ public class TestFilterIndexReader extends LuceneTestCase {
         super(in);
       }
 
+      @Override
       public TermsEnum iterator() throws IOException {
         return new TestTermsEnum(super.iterator());
       }
@@ -64,6 +64,7 @@ public class TestFilterIndexReader extends LuceneTestCase {
         super(in);
       }
 
+      @Override
       public TermsEnum terms() throws IOException {
         return new TestTermsEnum(super.terms());
       }
@@ -110,7 +111,7 @@ public class TestFilterIndexReader extends LuceneTestCase {
     }
     
     public TestReader(IndexReader reader) {
-      super(reader);
+      super(new SlowMultiReaderWrapper(reader));
     }
 
     @Override
@@ -118,47 +119,36 @@ public class TestFilterIndexReader extends LuceneTestCase {
       return new TestFields(super.fields());
     }
   }
-
-
-  /** Main for running test case by itself. */
-  public static void main(String args[]) {
-    TestRunner.run (new TestSuite(TestIndexReader.class));
-  }
     
   /**
    * Tests the IndexReader.getFieldNames implementation
    * @throws Exception on error
    */
   public void testFilterIndexReader() throws Exception {
-    Random random = newRandom();
-    Directory directory = newDirectory(random);
-    IndexWriter writer = new IndexWriter(directory, newIndexWriterConfig(random, TEST_VERSION_CURRENT, new MockAnalyzer()));
+    Directory directory = newDirectory();
+    IndexWriter writer = new IndexWriter(directory, newIndexWriterConfig(TEST_VERSION_CURRENT, new MockAnalyzer(random)));
 
     Document d1 = new Document();
-    d1.add(new Field("default","one two", Field.Store.YES, Field.Index.ANALYZED));
+    d1.add(newField("default","one two", Field.Store.YES, Field.Index.ANALYZED));
     writer.addDocument(d1);
 
     Document d2 = new Document();
-    d2.add(new Field("default","one three", Field.Store.YES, Field.Index.ANALYZED));
+    d2.add(newField("default","one three", Field.Store.YES, Field.Index.ANALYZED));
     writer.addDocument(d2);
 
     Document d3 = new Document();
-    d3.add(new Field("default","two four", Field.Store.YES, Field.Index.ANALYZED));
+    d3.add(newField("default","two four", Field.Store.YES, Field.Index.ANALYZED));
     writer.addDocument(d3);
 
     writer.close();
 
-    //IndexReader reader = new TestReader(IndexReader.open(directory, true));
-    Directory target = newDirectory(random);
-    writer = new IndexWriter(target, newIndexWriterConfig(random, TEST_VERSION_CURRENT, new MockAnalyzer()));
+    Directory target = newDirectory();
+    writer = new IndexWriter(target, newIndexWriterConfig(TEST_VERSION_CURRENT, new MockAnalyzer(random)));
     IndexReader reader = new TestReader(IndexReader.open(directory, true));
     writer.addIndexes(reader);
     writer.close();
     reader.close();
     reader = IndexReader.open(target, true);
-    
-
-    assertTrue(reader.isOptimized());
     
     TermsEnum terms = MultiFields.getTerms(reader, "default").iterator();
     while (terms.next() != null) {

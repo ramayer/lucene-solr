@@ -27,10 +27,9 @@ import org.apache.lucene.util.*;
 import java.util.*;
 import java.io.IOException;
 
-import static org.junit.Assert.*;
 import org.junit.Test;
 
-public class TestSurrogates extends LuceneTestCaseJ4 {
+public class TestSurrogates extends LuceneTestCase {
 
   private static String makeDifficultRandomUnicodeString(Random r) {
     final int end = r.nextInt(20);
@@ -272,15 +271,13 @@ public class TestSurrogates extends LuceneTestCaseJ4 {
 
   @Test
   public void testSurrogatesOrder() throws Exception {
-    Random r = newRandom();
-
-    Directory dir = newDirectory(r);
-    RandomIndexWriter w = new RandomIndexWriter(r,
+    Directory dir = newDirectory();
+    RandomIndexWriter w = new RandomIndexWriter(random,
                                                 dir,
-                                                newIndexWriterConfig(r, TEST_VERSION_CURRENT,
-                                                                      new MockAnalyzer()).setCodecProvider(_TestUtil.alwaysCodec(new PreFlexRWCodec())));
+                                                newIndexWriterConfig( TEST_VERSION_CURRENT,
+                                                                      new MockAnalyzer(random)).setCodecProvider(_TestUtil.alwaysCodec(new PreFlexRWCodec())));
 
-    final int numField = _TestUtil.nextInt(r, 2, 5);
+    final int numField = _TestUtil.nextInt(random, 2, 5);
 
     int uniqueTermCount = 0;
 
@@ -295,11 +292,11 @@ public class TestSurrogates extends LuceneTestCaseJ4 {
       final Set<String> uniqueTerms = new HashSet<String>();
 
       for(int i=0;i<numTerms;i++) {
-        String term = getRandomString(r) + "_ " + (tc++);
+        String term = getRandomString(random) + "_ " + (tc++);
         uniqueTerms.add(term);
         fieldTerms.add(new Term(field, term));
         Document doc = new Document();
-        doc.add(new Field(field, term, Field.Store.NO, Field.Index.NOT_ANALYZED));
+        doc.add(newField(field, term, Field.Store.NO, Field.Index.NOT_ANALYZED));
         w.addDocument(doc);
       }
       uniqueTermCount += uniqueTerms.size();
@@ -334,8 +331,8 @@ public class TestSurrogates extends LuceneTestCaseJ4 {
     //assertNotNull(fields);
 
     doTestStraightEnum(fieldTerms, reader, uniqueTermCount);
-    doTestSeekExists(r, fieldTerms, reader);
-    doTestSeekDoesNotExist(r, numField, fieldTerms, fieldTermsArray, reader);
+    doTestSeekExists(random, fieldTerms, reader);
+    doTestSeekDoesNotExist(random, numField, fieldTerms, fieldTermsArray, reader);
 
     reader.close();
     w.close();

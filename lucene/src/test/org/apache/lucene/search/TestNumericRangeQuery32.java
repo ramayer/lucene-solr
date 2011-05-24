@@ -17,28 +17,28 @@ package org.apache.lucene.search;
  * limitations under the License.
  */
 
-import java.util.Random;
-
 import org.apache.lucene.analysis.MockAnalyzer;
 import org.apache.lucene.document.Document;
 import org.apache.lucene.document.Field;
 import org.apache.lucene.document.NumericField;
 import org.apache.lucene.index.IndexReader;
+import org.apache.lucene.index.IndexReader.AtomicReaderContext;
 import org.apache.lucene.index.IndexWriter;
-import org.apache.lucene.index.IndexWriterConfig;
+import org.apache.lucene.index.MultiFields;
 import org.apache.lucene.index.RandomIndexWriter;
+import org.apache.lucene.index.SlowMultiReaderWrapper;
+import org.apache.lucene.index.Terms;
 import org.apache.lucene.index.TermsEnum;
 import org.apache.lucene.store.Directory;
 import org.apache.lucene.util.BytesRef;
-import org.apache.lucene.util.LuceneTestCaseJ4;
+import org.apache.lucene.util.LuceneTestCase;
 import org.apache.lucene.util.NumericUtils;
-
-import org.junit.Test;
+import org.apache.lucene.util._TestUtil;
 import org.junit.AfterClass;
 import org.junit.BeforeClass;
-import static org.junit.Assert.*;
+import org.junit.Test;
 
-public class TestNumericRangeQuery32 extends LuceneTestCaseJ4 {
+public class TestNumericRangeQuery32 extends LuceneTestCase {
   // distance of entries
   private static final int distance = 6666;
   // shift the starting of the values to the left, to also have negative values:
@@ -49,13 +49,14 @@ public class TestNumericRangeQuery32 extends LuceneTestCaseJ4 {
   private static Directory directory = null;
   private static IndexReader reader = null;
   private static IndexSearcher searcher = null;
-  private static Random random = null;
   
   @BeforeClass
   public static void beforeClass() throws Exception {
-    random = newStaticRandom(TestNumericRangeQuery32.class);
-    directory = newDirectory(random);
-    RandomIndexWriter writer = new RandomIndexWriter(random, directory);
+    directory = newDirectory();
+    RandomIndexWriter writer = new RandomIndexWriter(random, directory,
+        newIndexWriterConfig(TEST_VERSION_CURRENT, new MockAnalyzer(random))
+        .setMaxBufferedDocs(_TestUtil.nextInt(random, 50, 1000))
+        .setMergePolicy(newLogMergePolicy()));
     
     NumericField
       field8 = new NumericField("field8", 8, Field.Store.YES, true),
@@ -88,7 +89,7 @@ public class TestNumericRangeQuery32 extends LuceneTestCaseJ4 {
     }
   
     reader = writer.getReader();
-    searcher=new IndexSearcher(reader);
+    searcher=newSearcher(reader);
     writer.close();
   }
   
@@ -153,7 +154,9 @@ public class TestNumericRangeQuery32 extends LuceneTestCaseJ4 {
       assertEquals("First doc"+type, 2*distance+startOffset, Integer.parseInt(doc.get(field)) );
       doc=searcher.doc(sd[sd.length-1].doc);
       assertEquals("Last doc"+type, (1+count)*distance+startOffset, Integer.parseInt(doc.get(field)) );
-      if (i>0 && searcher.getIndexReader().getSequentialSubReaders().length == 1) {
+      if (i>0 && 
+          (searcher.getIndexReader().getSequentialSubReaders() == null || 
+           searcher.getIndexReader().getSequentialSubReaders().length == 1)) {
         assertEquals("Distinct term number is equal for all query types", lastTerms, terms);
       }
       lastTerms = terms;
@@ -177,14 +180,15 @@ public class TestNumericRangeQuery32 extends LuceneTestCaseJ4 {
   
   @Test
   public void testInverseRange() throws Exception {
+    AtomicReaderContext context = (AtomicReaderContext) new SlowMultiReaderWrapper(searcher.getIndexReader()).getTopReaderContext();
     NumericRangeFilter<Integer> f = NumericRangeFilter.newIntRange("field8", 8, 1000, -1000, true, true);
-    assertSame("A inverse range should return the EMPTY_DOCIDSET instance", DocIdSet.EMPTY_DOCIDSET, f.getDocIdSet(searcher.getIndexReader()));
+    assertSame("A inverse range should return the EMPTY_DOCIDSET instance", DocIdSet.EMPTY_DOCIDSET, f.getDocIdSet(context));
     f = NumericRangeFilter.newIntRange("field8", 8, Integer.MAX_VALUE, null, false, false);
     assertSame("A exclusive range starting with Integer.MAX_VALUE should return the EMPTY_DOCIDSET instance",
-      DocIdSet.EMPTY_DOCIDSET, f.getDocIdSet(searcher.getIndexReader()));
+               DocIdSet.EMPTY_DOCIDSET, f.getDocIdSet(context));
     f = NumericRangeFilter.newIntRange("field8", 8, null, Integer.MIN_VALUE, false, false);
     assertSame("A exclusive range ending with Integer.MIN_VALUE should return the EMPTY_DOCIDSET instance",
-      DocIdSet.EMPTY_DOCIDSET, f.getDocIdSet(searcher.getIndexReader()));
+               DocIdSet.EMPTY_DOCIDSET, f.getDocIdSet(context));
   }
   
   @Test
@@ -281,8 +285,8 @@ public class TestNumericRangeQuery32 extends LuceneTestCaseJ4 {
   
   @Test
   public void testInfiniteValues() throws Exception {
-    Directory dir = newDirectory(random);
-    IndexWriter writer = new IndexWriter(dir, newIndexWriterConfig(random, TEST_VERSION_CURRENT, new MockAnalyzer()));
+    Directory dir = newDirectory();
+    IndexWriter writer = new IndexWriter(dir, newIndexWriterConfig( TEST_VERSION_CURRENT, new MockAnalyzer(random)));
     Document doc = new Document();
     doc.add(new NumericField("float").setFloatValue(Float.NEGATIVE_INFINITY));
     doc.add(new NumericField("int").setIntValue(Integer.MIN_VALUE));
@@ -330,25 +334,22 @@ public class TestNumericRangeQuery32 extends LuceneTestCaseJ4 {
   }
   
   private void testRandomTrieAndClassicRangeQuery(int precisionStep) throws Exception {
-    final Random rnd=newRandom();
     String field="field"+precisionStep;
     int termCountT=0,termCountC=0;
     int num = 10 * RANDOM_MULTIPLIER;
     for (int i = 0; i < num; i++) {
-      int lower=(int)(rnd.nextDouble()*noDocs*distance)+startOffset;
-      int upper=(int)(rnd.nextDouble()*noDocs*distance)+startOffset;
+      int lower=(int)(random.nextDouble()*noDocs*distance)+startOffset;
+      int upper=(int)(random.nextDouble()*noDocs*distance)+startOffset;
       if (lower>upper) {
         int a=lower; lower=upper; upper=a;
       }
       final BytesRef lowerBytes = new BytesRef(NumericUtils.BUF_SIZE_INT), upperBytes = new BytesRef(NumericUtils.BUF_SIZE_INT);
       NumericUtils.intToPrefixCoded(lower, 0, lowerBytes);
       NumericUtils.intToPrefixCoded(upper, 0, upperBytes);
-      // TODO: when new TermRange ctors with BytesRef available, use them and do not convert to string!
-      final String lowerString = lowerBytes.utf8ToString(), upperString = upperBytes.utf8ToString();
 
       // test inclusive range
       NumericRangeQuery<Integer> tq=NumericRangeQuery.newIntRange(field, precisionStep, lower, upper, true, true);
-      TermRangeQuery cq=new TermRangeQuery(field, lowerString, upperString, true, true);
+      TermRangeQuery cq=new TermRangeQuery(field, lowerBytes, upperBytes, true, true);
       TopDocs tTopDocs = searcher.search(tq, 1);
       TopDocs cTopDocs = searcher.search(cq, 1);
       assertEquals("Returned count for NumericRangeQuery and TermRangeQuery must be equal", cTopDocs.totalHits, tTopDocs.totalHits );
@@ -356,7 +357,7 @@ public class TestNumericRangeQuery32 extends LuceneTestCaseJ4 {
       termCountC += cq.getTotalNumberOfTerms();
       // test exclusive range
       tq=NumericRangeQuery.newIntRange(field, precisionStep, lower, upper, false, false);
-      cq=new TermRangeQuery(field, lowerString, upperString, false, false);
+      cq=new TermRangeQuery(field, lowerBytes, upperBytes, false, false);
       tTopDocs = searcher.search(tq, 1);
       cTopDocs = searcher.search(cq, 1);
       assertEquals("Returned count for NumericRangeQuery and TermRangeQuery must be equal", cTopDocs.totalHits, tTopDocs.totalHits );
@@ -364,7 +365,7 @@ public class TestNumericRangeQuery32 extends LuceneTestCaseJ4 {
       termCountC += cq.getTotalNumberOfTerms();
       // test left exclusive range
       tq=NumericRangeQuery.newIntRange(field, precisionStep, lower, upper, false, true);
-      cq=new TermRangeQuery(field, lowerString, upperString, false, true);
+      cq=new TermRangeQuery(field, lowerBytes, upperBytes, false, true);
       tTopDocs = searcher.search(tq, 1);
       cTopDocs = searcher.search(cq, 1);
       assertEquals("Returned count for NumericRangeQuery and TermRangeQuery must be equal", cTopDocs.totalHits, tTopDocs.totalHits );
@@ -372,14 +373,16 @@ public class TestNumericRangeQuery32 extends LuceneTestCaseJ4 {
       termCountC += cq.getTotalNumberOfTerms();
       // test right exclusive range
       tq=NumericRangeQuery.newIntRange(field, precisionStep, lower, upper, true, false);
-      cq=new TermRangeQuery(field, lowerString, upperString, true, false);
+      cq=new TermRangeQuery(field, lowerBytes, upperBytes, true, false);
       tTopDocs = searcher.search(tq, 1);
       cTopDocs = searcher.search(cq, 1);
       assertEquals("Returned count for NumericRangeQuery and TermRangeQuery must be equal", cTopDocs.totalHits, tTopDocs.totalHits );
       termCountT += tq.getTotalNumberOfTerms();
       termCountC += cq.getTotalNumberOfTerms();
     }
-    if (precisionStep == Integer.MAX_VALUE && searcher.getIndexReader().getSequentialSubReaders().length == 1) {
+    if (precisionStep == Integer.MAX_VALUE && 
+        (searcher.getIndexReader().getSequentialSubReaders() == null || 
+         searcher.getIndexReader().getSequentialSubReaders().length == 1)) {
       assertEquals("Total number of terms should be equal for unlimited precStep", termCountT, termCountC);
     } else if (VERBOSE) {
       System.out.println("Average number of terms during random search on '" + field + "':");
@@ -409,13 +412,12 @@ public class TestNumericRangeQuery32 extends LuceneTestCaseJ4 {
   }
   
   private void testRangeSplit(int precisionStep) throws Exception {
-    final Random rnd=newRandom();
     String field="ascfield"+precisionStep;
     // 10 random tests
     int  num = 10 * RANDOM_MULTIPLIER;
     for (int  i =0;  i< num; i++) {
-      int lower=(int)(rnd.nextDouble()*noDocs - noDocs/2);
-      int upper=(int)(rnd.nextDouble()*noDocs - noDocs/2);
+      int lower=(int)(random.nextDouble()*noDocs - noDocs/2);
+      int upper=(int)(random.nextDouble()*noDocs - noDocs/2);
       if (lower>upper) {
         int a=lower; lower=upper; upper=a;
       }
@@ -485,14 +487,13 @@ public class TestNumericRangeQuery32 extends LuceneTestCaseJ4 {
   }
   
   private void testSorting(int precisionStep) throws Exception {
-    final Random rnd=newRandom();
     String field="field"+precisionStep;
     // 10 random tests, the index order is ascending,
     // so using a reverse sort field should retun descending documents
     int num = 10 * RANDOM_MULTIPLIER;
     for (int i = 0; i < num; i++) {
-      int lower=(int)(rnd.nextDouble()*noDocs*distance)+startOffset;
-      int upper=(int)(rnd.nextDouble()*noDocs*distance)+startOffset;
+      int lower=(int)(random.nextDouble()*noDocs*distance)+startOffset;
+      int upper=(int)(random.nextDouble()*noDocs*distance)+startOffset;
       if (lower>upper) {
         int a=lower; lower=upper; upper=a;
       }
@@ -568,7 +569,8 @@ public class TestNumericRangeQuery32 extends LuceneTestCaseJ4 {
   private void testEnum(int lower, int upper) throws Exception {
     NumericRangeQuery<Integer> q = NumericRangeQuery.newIntRange("field4", 4,
         lower, upper, true, true);
-    TermsEnum termEnum = q.getTermsEnum(searcher.getIndexReader());
+    Terms terms = MultiFields.getTerms(searcher.getIndexReader(), "field4");
+    TermsEnum termEnum = q.getTermsEnum(terms);
     int count = 0;
     while (termEnum.next() != null) {
       final BytesRef t = termEnum.term();

@@ -243,7 +243,27 @@ public class TestFastLRUCache extends LuceneTestCase {
     assertNotNull(m.get(5));
     assertNotNull(m.get(4));
     assertNotNull(m.get(2));
+
+    m = cache.getOldestAccessedItems(0);
+    assertTrue(m.isEmpty());
+
+    //test this too
+    m = cache.getLatestAccessedItems(0);
+    assertTrue(m.isEmpty());
+
     cache.destroy();
+  }
+
+  // enough randomness to exercise all of the different cache purging phases
+  public void testRandom() {
+    int sz = random.nextInt(100)+5;
+    int lowWaterMark = random.nextInt(sz-3)+1;
+    int keyrange = random.nextInt(sz*3)+1;
+    ConcurrentLRUCache<Integer, String> cache = new ConcurrentLRUCache<Integer, String>(sz, lowWaterMark);
+    for (int i=0; i<10000; i++) {
+      cache.put(random.nextInt(keyrange), "");
+      cache.get(random.nextInt(keyrange));
+    }
   }
 
   void doPerfTest(int iter, int cacheSize, int maxKey) {
@@ -252,7 +272,7 @@ public class TestFastLRUCache extends LuceneTestCase {
     int lowerWaterMark = cacheSize;
     int upperWaterMark = (int)(lowerWaterMark * 1.1);
 
-    Random r = new Random(0);
+    Random r = random;
     ConcurrentLRUCache cache = new ConcurrentLRUCache(upperWaterMark, lowerWaterMark, (upperWaterMark+lowerWaterMark)/2, upperWaterMark, false, false, null);
     boolean getSize=false;
     int minSize=0,maxSize=0;
@@ -302,9 +322,8 @@ public class TestFastLRUCache extends LuceneTestCase {
   }
 
   void fillCache(SolrCache sc, int cacheSize, int maxKey) {
-    Random r = new Random(0);
     for (int i=0; i<cacheSize; i++) {
-      Integer kv = r.nextInt(maxKey);
+      Integer kv = random.nextInt(maxKey);
       sc.put(kv,kv);
     }
   }
@@ -325,8 +344,9 @@ public class TestFastLRUCache extends LuceneTestCase {
     Thread[] threads = new Thread[nThreads];
     final AtomicInteger puts = new AtomicInteger(0);
     for (int i=0; i<threads.length; i++) {
-      final int seed=i;
+      final int seed=random.nextInt();
       threads[i] = new Thread() {
+          @Override
           public void run() {
             int ret = useCache(sc, numGets/nThreads, maxKey, seed);
             puts.addAndGet(ret);

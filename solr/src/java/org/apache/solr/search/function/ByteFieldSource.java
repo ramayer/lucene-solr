@@ -16,8 +16,9 @@ package org.apache.solr.search.function;
  * limitations under the License.
  */
 
-import org.apache.lucene.index.IndexReader;
-import org.apache.lucene.search.FieldCache;
+import org.apache.lucene.index.IndexReader.AtomicReaderContext;
+import org.apache.lucene.search.cache.ByteValuesCreator;
+import org.apache.lucene.search.cache.CachedArray.ByteValues;
 
 import java.io.IOException;
 import java.util.Map;
@@ -27,33 +28,29 @@ import java.util.Map;
  * using <code>getInts()</code>
  * and makes those values available as other numeric types, casting as needed. *
  *
- * @version $Id: IntFieldSource.java 555343 2007-07-11 17:46:25Z hossman $
+ * @version $Id$
  */
 
-public class ByteFieldSource extends FieldCacheSource {
-  FieldCache.ByteParser parser;
+public class ByteFieldSource extends NumericFieldCacheSource<ByteValues> {
 
-  public ByteFieldSource(String field) {
-    this(field, null);
+  public ByteFieldSource(ByteValuesCreator creator) {
+    super(creator);
   }
 
-  public ByteFieldSource(String field, FieldCache.ByteParser parser) {
-    super(field);
-    this.parser = parser;
-  }
-
+  @Override
   public String description() {
     return "byte(" + field + ')';
   }
 
-  public DocValues getValues(Map context, IndexReader reader) throws IOException {
-    final byte[] arr = (parser == null) ?
-            cache.getBytes(reader, field) :
-            cache.getBytes(reader, field, parser);
+  @Override
+  public DocValues getValues(Map context, AtomicReaderContext readerContext) throws IOException {
+    final ByteValues vals = cache.getBytes(readerContext.reader, field, creator);
+    final byte[] arr = vals.values;
+    
     return new DocValues() {
       @Override
       public byte byteVal(int doc) {
-        return (byte) arr[doc];
+        return arr[doc];
       }
 
       @Override
@@ -61,45 +58,41 @@ public class ByteFieldSource extends FieldCacheSource {
         return (short) arr[doc];
       }
 
+      @Override
       public float floatVal(int doc) {
         return (float) arr[doc];
       }
 
+      @Override
       public int intVal(int doc) {
         return (int) arr[doc];
       }
 
+      @Override
       public long longVal(int doc) {
         return (long) arr[doc];
       }
 
+      @Override
       public double doubleVal(int doc) {
         return (double) arr[doc];
       }
 
+      @Override
       public String strVal(int doc) {
         return Byte.toString(arr[doc]);
       }
 
+      @Override
       public String toString(int doc) {
         return description() + '=' + byteVal(doc);
       }
 
+      @Override
+      public Object objectVal(int doc) {
+        return arr[doc];  // TODO: valid?
+      }
+
     };
-  }
-
-  public boolean equals(Object o) {
-    if (o.getClass() != ByteFieldSource.class) return false;
-    ByteFieldSource
-            other = (ByteFieldSource) o;
-    return super.equals(other)
-            && this.parser == null ? other.parser == null :
-            this.parser.getClass() == other.parser.getClass();
-  }
-
-  public int hashCode() {
-    int h = parser == null ? Byte.class.hashCode() : parser.getClass().hashCode();
-    h += super.hashCode();
-    return h;
   }
 }

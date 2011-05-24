@@ -31,7 +31,6 @@ import org.apache.lucene.util.English;
 import java.io.IOException;
 import java.util.HashMap;
 import java.util.Map;
-import java.util.Random;
 import java.util.SortedSet;
 
 public class TestTermVectors extends LuceneTestCase {
@@ -39,18 +38,11 @@ public class TestTermVectors extends LuceneTestCase {
   private IndexReader reader;
   private Directory directory;
 
-  private Random random;
-
-  public TestTermVectors(String s) {
-    super(s);
-  }
-
   @Override
-  protected void setUp() throws Exception {                  
+  public void setUp() throws Exception {                  
     super.setUp();
-    random = newRandom();
-    directory = newDirectory(random);
-    RandomIndexWriter writer = new RandomIndexWriter(random, directory, new MockAnalyzer(MockTokenizer.SIMPLE, true));
+    directory = newDirectory();
+    RandomIndexWriter writer = new RandomIndexWriter(random, directory, newIndexWriterConfig(TEST_VERSION_CURRENT, new MockAnalyzer(random, MockTokenizer.SIMPLE, true)).setMergePolicy(newLogMergePolicy()));
     //writer.setUseCompoundFile(true);
     //writer.infoStream = System.out;
     for (int i = 0; i < 1000; i++) {
@@ -79,11 +71,11 @@ public class TestTermVectors extends LuceneTestCase {
     }
     reader = writer.getReader();
     writer.close();
-    searcher = new IndexSearcher(reader);
+    searcher = newSearcher(reader);
   }
   
   @Override
-  protected void tearDown() throws Exception {
+  public void tearDown() throws Exception {
     searcher.close();
     reader.close();
     directory.close();
@@ -115,8 +107,8 @@ public class TestTermVectors extends LuceneTestCase {
   }
   
   public void testTermVectorsFieldOrder() throws IOException {
-    Directory dir = newDirectory(random);
-    RandomIndexWriter writer = new RandomIndexWriter(random, dir, new MockAnalyzer(MockTokenizer.SIMPLE, true));
+    Directory dir = newDirectory();
+    RandomIndexWriter writer = new RandomIndexWriter(random, dir, new MockAnalyzer(random, MockTokenizer.SIMPLE, true));
     Document doc = new Document();
     doc.add(new Field("c", "some content here", Field.Store.YES, Field.Index.ANALYZED, Field.TermVector.WITH_POSITIONS_OFFSETS));
     doc.add(new Field("a", "some content here", Field.Store.YES, Field.Index.ANALYZED, Field.TermVector.WITH_POSITIONS_OFFSETS));
@@ -243,18 +235,18 @@ public class TestTermVectors extends LuceneTestCase {
     Document testDoc4 = new Document();
     setupDoc(testDoc4, test4);
     
-    Directory dir = newDirectory(random);
+    Directory dir = newDirectory();
     
     RandomIndexWriter writer = new RandomIndexWriter(random, dir, 
-        newIndexWriterConfig(random, TEST_VERSION_CURRENT, new MockAnalyzer(MockTokenizer.SIMPLE, true))
-        .setOpenMode(OpenMode.CREATE));
+        newIndexWriterConfig(TEST_VERSION_CURRENT, new MockAnalyzer(random, MockTokenizer.SIMPLE, true))
+                                                     .setOpenMode(OpenMode.CREATE).setMergePolicy(newLogMergePolicy()));
     writer.addDocument(testDoc1);
     writer.addDocument(testDoc2);
     writer.addDocument(testDoc3);
     writer.addDocument(testDoc4);
     IndexReader reader = writer.getReader();
     writer.close();
-    IndexSearcher knownSearcher = new IndexSearcher(reader);
+    IndexSearcher knownSearcher = newSearcher(reader);
     FieldsEnum fields = MultiFields.getFields(knownSearcher.reader).iterator();
     
     DocsEnum docs = null;
@@ -359,13 +351,20 @@ public class TestTermVectors extends LuceneTestCase {
   // Test only a few docs having vectors
   public void testRareVectors() throws IOException {
     RandomIndexWriter writer = new RandomIndexWriter(random, directory, 
-        newIndexWriterConfig(random, TEST_VERSION_CURRENT, new MockAnalyzer(MockTokenizer.SIMPLE, true))
+        newIndexWriterConfig(TEST_VERSION_CURRENT, new MockAnalyzer(random, MockTokenizer.SIMPLE, true))
         .setOpenMode(OpenMode.CREATE));
+    writer.w.setInfoStream(VERBOSE ? System.out : null);
+    if (VERBOSE) {
+      System.out.println("TEST: now add non-vectors");
+    }
     for (int i = 0; i < 100; i++) {
       Document doc = new Document();
       doc.add(new Field("field", English.intToEnglish(i),
                         Field.Store.YES, Field.Index.ANALYZED, Field.TermVector.NO));
       writer.addDocument(doc);
+    }
+    if (VERBOSE) {
+      System.out.println("TEST: now add vectors");
     }
     for(int i=0;i<10;i++) {
       Document doc = new Document();
@@ -374,14 +373,18 @@ public class TestTermVectors extends LuceneTestCase {
       writer.addDocument(doc);
     }
 
+    if (VERBOSE) {
+      System.out.println("TEST: now getReader");
+    }
     IndexReader reader = writer.getReader();
     writer.close();
-    searcher = new IndexSearcher(reader);
+    searcher = newSearcher(reader);
 
     Query query = new TermQuery(new Term("field", "hundred"));
     ScoreDoc[] hits = searcher.search(query, null, 1000).scoreDocs;
     assertEquals(10, hits.length);
     for (int i = 0; i < hits.length; i++) {
+
       TermFreqVector [] vector = searcher.reader.getTermFreqVectors(hits[i].doc);
       assertTrue(vector != null);
       assertTrue(vector.length == 1);
@@ -394,8 +397,8 @@ public class TestTermVectors extends LuceneTestCase {
   // vectors up
   public void testMixedVectrosVectors() throws IOException {
     RandomIndexWriter writer = new RandomIndexWriter(random, directory, 
-        newIndexWriterConfig(random, TEST_VERSION_CURRENT, 
-        new MockAnalyzer(MockTokenizer.SIMPLE, true)).setOpenMode(OpenMode.CREATE));
+        newIndexWriterConfig(TEST_VERSION_CURRENT, 
+        new MockAnalyzer(random, MockTokenizer.SIMPLE, true)).setOpenMode(OpenMode.CREATE));
     Document doc = new Document();
     doc.add(new Field("field", "one",
                       Field.Store.YES, Field.Index.ANALYZED, Field.TermVector.NO));
@@ -411,7 +414,7 @@ public class TestTermVectors extends LuceneTestCase {
     IndexReader reader = writer.getReader();
     writer.close();
 
-    searcher = new IndexSearcher(reader);
+    searcher = newSearcher(reader);
 
     Query query = new TermQuery(new Term("field", "one"));
     ScoreDoc[] hits = searcher.search(query, null, 1000).scoreDocs;

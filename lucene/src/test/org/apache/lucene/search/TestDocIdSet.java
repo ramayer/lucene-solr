@@ -21,15 +21,14 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Iterator;
-import java.util.Random;
 
 import junit.framework.Assert;
 
 import org.apache.lucene.document.Document;
-import org.apache.lucene.document.Field;
 import org.apache.lucene.document.Field.Index;
 import org.apache.lucene.document.Field.Store;
 import org.apache.lucene.index.IndexReader;
+import org.apache.lucene.index.IndexReader.AtomicReaderContext;
 import org.apache.lucene.index.RandomIndexWriter;
 import org.apache.lucene.store.Directory;
 import org.apache.lucene.util.LuceneTestCase;
@@ -101,23 +100,22 @@ public class TestDocIdSet extends LuceneTestCase {
   public void testNullDocIdSet() throws Exception {
     // Tests that if a Filter produces a null DocIdSet, which is given to
     // IndexSearcher, everything works fine. This came up in LUCENE-1754.
-    Random random = newRandom();
-    Directory dir = newDirectory(random);
+    Directory dir = newDirectory();
     RandomIndexWriter writer = new RandomIndexWriter(random, dir);
     Document doc = new Document();
-    doc.add(new Field("c", "val", Store.NO, Index.NOT_ANALYZED_NO_NORMS));
+    doc.add(newField("c", "val", Store.NO, Index.NOT_ANALYZED_NO_NORMS));
     writer.addDocument(doc);
     IndexReader reader = writer.getReader();
     writer.close();
     
     // First verify the document is searchable.
-    IndexSearcher searcher = new IndexSearcher(reader);
+    IndexSearcher searcher = newSearcher(reader);
     Assert.assertEquals(1, searcher.search(new MatchAllDocsQuery(), 10).totalHits);
     
     // Now search w/ a Filter which returns a null DocIdSet
     Filter f = new Filter() {
       @Override
-      public DocIdSet getDocIdSet(IndexReader reader) throws IOException {
+      public DocIdSet getDocIdSet(AtomicReaderContext context) throws IOException {
         return null;
       }
     };

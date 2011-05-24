@@ -28,7 +28,6 @@ import org.apache.lucene.util.LuceneTestCase;
 import org.apache.lucene.util._TestUtil;
 import org.apache.lucene.util.BytesRef;
 import java.io.IOException;
-import java.util.Random;
 import java.io.ByteArrayOutputStream;
 import java.io.PrintStream;
 
@@ -36,19 +35,13 @@ public class TestFieldCache extends LuceneTestCase {
   protected IndexReader reader;
   private static final int NUM_DOCS = 1000 * RANDOM_MULTIPLIER;
   private String[] unicodeStrings;
-  private Random random;
   private Directory directory;
-  
-  public TestFieldCache(String s) {
-    super(s);
-  }
 
   @Override
-  protected void setUp() throws Exception {
+  public void setUp() throws Exception {
     super.setUp();
-    random = newRandom();
-    directory = newDirectory(random);
-    RandomIndexWriter writer= new RandomIndexWriter(random, directory);
+    directory = newDirectory();
+    RandomIndexWriter writer= new RandomIndexWriter(random, directory, newIndexWriterConfig(TEST_VERSION_CURRENT, new MockAnalyzer(random)).setMergePolicy(newLogMergePolicy()));
     long theLong = Long.MAX_VALUE;
     double theDouble = Double.MAX_VALUE;
     byte theByte = Byte.MAX_VALUE;
@@ -56,14 +49,18 @@ public class TestFieldCache extends LuceneTestCase {
     int theInt = Integer.MAX_VALUE;
     float theFloat = Float.MAX_VALUE;
     unicodeStrings = new String[NUM_DOCS];
+    if (VERBOSE) {
+      System.out.println("TEST: setUp");
+    }
+    writer.w.setInfoStream(VERBOSE ? System.out : null);
     for (int i = 0; i < NUM_DOCS; i++){
       Document doc = new Document();
-      doc.add(new Field("theLong", String.valueOf(theLong--), Field.Store.NO, Field.Index.NOT_ANALYZED));
-      doc.add(new Field("theDouble", String.valueOf(theDouble--), Field.Store.NO, Field.Index.NOT_ANALYZED));
-      doc.add(new Field("theByte", String.valueOf(theByte--), Field.Store.NO, Field.Index.NOT_ANALYZED));
-      doc.add(new Field("theShort", String.valueOf(theShort--), Field.Store.NO, Field.Index.NOT_ANALYZED));
-      doc.add(new Field("theInt", String.valueOf(theInt--), Field.Store.NO, Field.Index.NOT_ANALYZED));
-      doc.add(new Field("theFloat", String.valueOf(theFloat--), Field.Store.NO, Field.Index.NOT_ANALYZED));
+      doc.add(newField("theLong", String.valueOf(theLong--), Field.Store.NO, Field.Index.NOT_ANALYZED));
+      doc.add(newField("theDouble", String.valueOf(theDouble--), Field.Store.NO, Field.Index.NOT_ANALYZED));
+      doc.add(newField("theByte", String.valueOf(theByte--), Field.Store.NO, Field.Index.NOT_ANALYZED));
+      doc.add(newField("theShort", String.valueOf(theShort--), Field.Store.NO, Field.Index.NOT_ANALYZED));
+      doc.add(newField("theInt", String.valueOf(theInt--), Field.Store.NO, Field.Index.NOT_ANALYZED));
+      doc.add(newField("theFloat", String.valueOf(theFloat--), Field.Store.NO, Field.Index.NOT_ANALYZED));
 
       // sometimes skip the field:
       if (random.nextInt(40) != 17) {
@@ -80,7 +77,7 @@ public class TestFieldCache extends LuceneTestCase {
           s = _TestUtil.randomUnicodeString(random, 250);
         }
         unicodeStrings[i] = s;
-        doc.add(new Field("theRandomUnicodeString", unicodeStrings[i], Field.Store.YES, Field.Index.NOT_ANALYZED_NO_NORMS));
+        doc.add(newField("theRandomUnicodeString", unicodeStrings[i], Field.Store.YES, Field.Index.NOT_ANALYZED_NO_NORMS));
       }
       writer.addDocument(doc);
     }
@@ -89,7 +86,7 @@ public class TestFieldCache extends LuceneTestCase {
   }
 
   @Override
-  protected void tearDown() throws Exception {
+  public void tearDown() throws Exception {
     reader.close();
     directory.close();
     super.tearDown();
@@ -124,7 +121,7 @@ public class TestFieldCache extends LuceneTestCase {
     assertSame("Second request with explicit parser return same array", longs, cache.getLongs(reader, "theLong", FieldCache.DEFAULT_LONG_PARSER));
     assertTrue("longs Size: " + longs.length + " is not: " + NUM_DOCS, longs.length == NUM_DOCS);
     for (int i = 0; i < longs.length; i++) {
-      assertTrue(longs[i] + " does not equal: " + (Long.MAX_VALUE - i), longs[i] == (Long.MAX_VALUE - i));
+      assertTrue(longs[i] + " does not equal: " + (Long.MAX_VALUE - i) + " i=" + i, longs[i] == (Long.MAX_VALUE - i));
 
     }
     
@@ -187,7 +184,14 @@ public class TestFieldCache extends LuceneTestCase {
       assertEquals(val2, val1);
     }
 
-
+    // seek the enum around (note this isn't a great test here)
+    for (int i = 0; i < 100 * RANDOM_MULTIPLIER; i++) {
+      int k = _TestUtil.nextInt(random, 1, nTerms-1);
+      BytesRef val1 = termsIndex.lookup(k, val);
+      assertEquals(TermsEnum.SeekStatus.FOUND, tenum.seek(val1));
+      assertEquals(val1, tenum.term());
+    }
+    
     // test bad field
     termsIndex = cache.getTermsIndex(reader, "bogusfield");
 
@@ -208,9 +212,9 @@ public class TestFieldCache extends LuceneTestCase {
   }
 
   public void testEmptyIndex() throws Exception {
-    Directory dir = newDirectory(random);
-    IndexWriter writer= new IndexWriter(dir, newIndexWriterConfig(random, TEST_VERSION_CURRENT, new MockAnalyzer()).setMaxBufferedDocs(500));
-    IndexReader r = writer.getReader();
+    Directory dir = newDirectory();
+    IndexWriter writer= new IndexWriter(dir, newIndexWriterConfig( TEST_VERSION_CURRENT, new MockAnalyzer(random)).setMaxBufferedDocs(500));
+    IndexReader r = IndexReader.open(writer, true);
     FieldCache.DocTerms terms = FieldCache.DEFAULT.getTerms(r, "foobar");
     FieldCache.DocTermsIndex termsIndex = FieldCache.DEFAULT.getTermsIndex(r, "foobar");
     r.close();

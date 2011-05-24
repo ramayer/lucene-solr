@@ -12,28 +12,33 @@ import org.apache.solr.core.SolrCore;
 import org.apache.solr.util.TermFreqIterator;
 
 public abstract class Lookup {
-  
   /**
    * Result of a lookup.
    */
-  public static final class LookupResult {
-    String key;
-    float value;
+  public static final class LookupResult implements Comparable<LookupResult> {
+    public final String key;
+    public final float value;
     
     public LookupResult(String key, float value) {
       this.key = key;
       this.value = value;
     }
     
+    @Override
     public String toString() {
       return key + "/" + value;
+    }
+
+    /** Compare alphabetically. */
+    public int compareTo(LookupResult o) {
+      return this.key.compareTo(o.key);
     }
   }
   
   public static final class LookupPriorityQueue extends PriorityQueue<LookupResult> {
     
     public LookupPriorityQueue(int size) {
-      initialize(size);
+      super(size);
     }
 
     @Override

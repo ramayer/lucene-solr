@@ -22,8 +22,9 @@ import java.util.HashSet;
 import java.util.Set;
 
 import org.apache.lucene.analysis.BaseTokenStreamTestCase;
+import org.apache.lucene.analysis.MockTokenizer;
 import org.apache.lucene.analysis.TokenStream;
-import org.apache.lucene.analysis.core.WhitespaceTokenizer;
+import org.apache.lucene.analysis.util.CharArraySet;
 
 /** Test {@link KeepWordFilter} */
 public class TestKeepWordFilter extends BaseTokenStreamTestCase {
@@ -34,16 +35,26 @@ public class TestKeepWordFilter extends BaseTokenStreamTestCase {
     words.add( "aaa" );
     words.add( "bbb" );
     
-    String input = "aaa BBB ccc ddd EEE";
+    String input = "xxx yyy aaa zzz BBB ccc ddd EEE";
     
     // Test Stopwords
-    TokenStream stream = new WhitespaceTokenizer(TEST_VERSION_CURRENT, new StringReader(input));
-    stream = new KeepWordFilter(stream, words, true);
-    assertTokenStreamContents(stream, new String[] { "aaa", "BBB" });
+    TokenStream stream = new MockTokenizer(new StringReader(input), MockTokenizer.WHITESPACE, false);
+    stream = new KeepWordFilter(true, stream, new CharArraySet(TEST_VERSION_CURRENT, words, true));
+    assertTokenStreamContents(stream, new String[] { "aaa", "BBB" }, new int[] { 3, 2 });
        
     // Now force case
-    stream = new WhitespaceTokenizer(TEST_VERSION_CURRENT, new StringReader(input));
-    stream = new KeepWordFilter(stream, words, false);
-    assertTokenStreamContents(stream, new String[] { "aaa" });
+    stream = new MockTokenizer(new StringReader(input), MockTokenizer.WHITESPACE, false);
+    stream = new KeepWordFilter(true, stream, new CharArraySet(TEST_VERSION_CURRENT,words, false));
+    assertTokenStreamContents(stream, new String[] { "aaa" }, new int[] { 3 });
+    
+    // Test Stopwords
+    stream = new MockTokenizer(new StringReader(input), MockTokenizer.WHITESPACE, false);
+    stream = new KeepWordFilter(false, stream, new CharArraySet(TEST_VERSION_CURRENT, words, true));
+    assertTokenStreamContents(stream, new String[] { "aaa", "BBB" }, new int[] { 1, 1 });
+       
+    // Now force case
+    stream = new MockTokenizer(new StringReader(input), MockTokenizer.WHITESPACE, false);
+    stream = new KeepWordFilter(false, stream, new CharArraySet(TEST_VERSION_CURRENT,words, false));
+    assertTokenStreamContents(stream, new String[] { "aaa" }, new int[] { 1 });
   }
 }

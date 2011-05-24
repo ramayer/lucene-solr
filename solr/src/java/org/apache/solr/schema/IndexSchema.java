@@ -20,13 +20,18 @@ package org.apache.solr.schema;
 import org.apache.lucene.analysis.Analyzer;
 import org.apache.lucene.analysis.TokenStream;
 import org.apache.lucene.document.Fieldable;
+import org.apache.lucene.search.DefaultSimilarity;
+import org.apache.lucene.search.IndexSearcher;
 import org.apache.lucene.search.Similarity;
+import org.apache.lucene.search.SimilarityProvider;
 import org.apache.lucene.queryParser.QueryParser;
 import org.apache.lucene.util.Version;
 import org.apache.solr.common.ResourceLoader;
 import org.apache.solr.common.SolrException;
 import org.apache.solr.common.params.SolrParams;
 import org.apache.solr.common.util.DOMUtil;
+import org.apache.solr.common.util.NamedList;
+import org.apache.solr.common.util.SystemIdResolver;
 import org.apache.solr.core.SolrConfig;
 import org.apache.solr.core.Config;
 import org.apache.solr.core.SolrResourceLoader;
@@ -35,9 +40,11 @@ import org.apache.solr.analysis.TokenFilterFactory;
 import org.apache.solr.analysis.TokenizerChain;
 import org.apache.solr.analysis.TokenizerFactory;
 import org.apache.solr.search.SolrQueryParser;
+import org.apache.solr.search.SolrSimilarityProvider;
 import org.apache.solr.util.plugin.AbstractPluginLoader;
 import org.apache.solr.util.plugin.SolrCoreAware;
 import org.w3c.dom.*;
+import org.xml.sax.InputSource;
 
 import javax.xml.xpath.XPath;
 import javax.xml.xpath.XPathConstants;
@@ -92,48 +99,26 @@ public final class IndexSchema {
    */
   private Map<SchemaField, Integer> copyFieldTargetCounts
     = new HashMap<SchemaField, Integer>();
-  /**
-   * Constructs a schema using the specified file name using the normal
-   * Config path directory searching rules.
-   *
-   * @see Config#openResource
-   * @deprecated Use {@link #IndexSchema(SolrConfig, String, InputStream)} instead.
-   */
-  @Deprecated
-  public IndexSchema(SolrConfig solrConfig, String name) {
-    this(solrConfig, name, null);
-  }
+
     /**
    * Constructs a schema using the specified resource name and stream.
    * If the is stream is null, the resource loader will load the schema resource by name.
    * @see SolrResourceLoader#openSchema
    * By default, this follows the normal config path directory searching rules.
-   * @see Config#openResource
+   * @see SolrResourceLoader#openResource
    */
-  public IndexSchema(SolrConfig solrConfig, String name, InputStream is) {
+  public IndexSchema(SolrConfig solrConfig, String name, InputSource is) {
     this.solrConfig = solrConfig;
     if (name == null)
       name = DEFAULT_SCHEMA_FILE;
     this.resourceName = name;
     loader = solrConfig.getResourceLoader();
-    InputStream lis = is;
-    if (lis == null)
-      lis = loader.openSchema(name);
-    readSchema(lis);
-    if (lis != is) {
-      try {
-        lis.close();
-      }
-      catch(IOException xio) {} // ignore
+    if (is == null) {
+      is = new InputSource(loader.openSchema(name));
+      is.setSystemId(SystemIdResolver.createSystemIdFromResourceName(name));
     }
+    readSchema(is);
     loader.inform( loader );
-  }
-
-  /**
-   * @deprecated -- get access to SolrConfig some other way...
-   */
-  public SolrConfig getSolrConfig() {
-    return solrConfig;
   }
   
   /**
@@ -157,31 +142,7 @@ public final class IndexSchema {
   float getVersion() {
     return version;
   }
-  
-  /**
-   * Direct access to the InputStream for the schemaFile used by this instance.
-   * @see Config#openResource
-   * @deprecated Use {@link #getSolrConfig()} and open a resource input stream
-   *             for {@link #getResourceName()} instead.
-   */
-  @Deprecated
-  public InputStream getInputStream() {
-    return loader.openResource(resourceName);
-  }
 
-  /** Gets the name of the schema file.
-   * @deprecated Use {@link #getResourceName()} instead.
-   */
-  @Deprecated
-  public String getSchemaFile() {
-    return resourceName;
-  }
-
-  /** The Name of this schema (as specified in the schema file)
-   * @deprecated Use {@link #getSchemaName()} instead.
-   */
-  @Deprecated
-  public String getName() { return name; }
 
   /**
    * Provides direct access to the Map containing all explicit
@@ -228,19 +189,22 @@ public final class IndexSchema {
    */
   public Collection<SchemaField> getRequiredFields() { return requiredFields; }
 
-  private SimilarityFactory similarityFactory;
+  private SimilarityProviderFactory similarityProviderFactory;
 
   /**
-   * Returns the Similarity used for this index
+   * Returns the SimilarityProvider used for this index
    */
-  public Similarity getSimilarity() { return similarityFactory.getSimilarity(); }
+  public SimilarityProvider getSimilarityProvider() { return similarityProviderFactory.getSimilarityProvider(this); }
 
   /**
-   * Returns the SimilarityFactory used for this index
+   * Returns the SimilarityProviderFactory used for this index
    */
-  public SimilarityFactory getSimilarityFactory() { return similarityFactory; }
+  public SimilarityProviderFactory getSimilarityProviderFactory() { return similarityProviderFactory; }
 
-
+  private Similarity fallbackSimilarity;
+  
+  /** fallback similarity, in the case a field doesnt specify */
+  public Similarity getFallbackSimilarity() { return fallbackSimilarity; }
 
   /**
    * Returns the Analyzer used when indexing documents for this index
@@ -264,23 +228,6 @@ public final class IndexSchema {
    */
   public Analyzer getQueryAnalyzer() { return queryAnalyzer; }
 
-
-
-  /**
-   * A SolrQueryParser linked to this IndexSchema for field datatype
-   * information, and populated with default options from the
-   * &lt;solrQueryParser&gt; configuration for this IndexSchema.
-   *
-   * @param defaultField if non-null overrides the schema default
-   * @deprecated
-   */
-  public SolrQueryParser getSolrQueryParser(String defaultField) {
-    SolrQueryParser qp = new SolrQueryParser(this,defaultField);
-    String operator = getQueryParserDefaultOperator();
-    qp.setDefaultOperator("AND".equals(operator) ?
-                          QueryParser.Operator.AND : QueryParser.Operator.OR);
-    return qp;
-  }
   
   /**
    * Name of the default search field specified in the schema file
@@ -291,9 +238,7 @@ public final class IndexSchema {
 
   /**
    * default operator ("AND" or "OR") for QueryParser
-   * @deprecated use getSolrQueryParser().getDefaultOperator()
    */
-  @Deprecated
   public String getQueryParserDefaultOperator() {
     return queryParserDefaultOperator;
   }
@@ -375,6 +320,7 @@ public final class IndexSchema {
       return analyzer!=null ? analyzer : getDynamicFieldType(fieldName).getAnalyzer();
     }
 
+    @Override
     public TokenStream tokenStream(String fieldName, Reader reader)
     {
       return getAnalyzer(fieldName).tokenStream(fieldName,reader);
@@ -411,7 +357,7 @@ public final class IndexSchema {
     }
   }
 
-  private void readSchema(InputStream is) {
+  private void readSchema(InputSource is) {
     log.info("Reading Solr Schema");
 
     try {
@@ -448,12 +394,20 @@ public final class IndexSchema {
           expression = "./analyzer[not(@type)] | ./analyzer[@type='index']";
           anode = (Node)xpath.evaluate(expression, node, XPathConstants.NODE);
           Analyzer analyzer = readAnalyzer(anode);
+          
+          // a custom similarity[Factory]
+          expression = "./similarity";
+          anode = (Node)xpath.evaluate(expression, node, XPathConstants.NODE);
+          Similarity similarity = readSimilarity(anode);
 
           if (queryAnalyzer==null) queryAnalyzer=analyzer;
           if (analyzer==null) analyzer=queryAnalyzer;
           if (analyzer!=null) {
             ft.setAnalyzer(analyzer);
             ft.setQueryAnalyzer(queryAnalyzer);
+          }
+          if (similarity!=null) {
+            ft.setSimilarity(similarity);
           }
           if (ft instanceof SchemaAware){
             schemaAware.add((SchemaAware) ft);
@@ -550,36 +504,33 @@ public final class IndexSchema {
     log.trace("Dynamic Field Ordering:" + dFields);
 
     // stuff it in a normal array for faster access
-    dynamicFields = (DynamicField[])dFields.toArray(new DynamicField[dFields.size()]);
-
+    dynamicFields = dFields.toArray(new DynamicField[dFields.size()]);
 
     Node node = (Node) xpath.evaluate("/schema/similarity", document, XPathConstants.NODE);
+    Similarity similarity = readSimilarity(node);
+    fallbackSimilarity = similarity == null ? new DefaultSimilarity() : similarity;
+
+    node = (Node) xpath.evaluate("/schema/similarityProvider", document, XPathConstants.NODE);
     if (node==null) {
-      similarityFactory = new SimilarityFactory() {
-        public Similarity getSimilarity() {
-          return Similarity.getDefault();
+      final SolrSimilarityProvider provider = new SolrSimilarityProvider(this);
+      similarityProviderFactory = new SimilarityProviderFactory() {
+        @Override
+        public SolrSimilarityProvider getSimilarityProvider(IndexSchema schema) {
+          return provider;
         }
       };
-      log.debug("using default similarity");
+      log.debug("using default similarityProvider");
     } else {
       final Object obj = loader.newInstance(((Element) node).getAttribute("class"));
-      if (obj instanceof SimilarityFactory) {
-        // configure a factory, get a similarity back
-        SolrParams params = SolrParams.toSolrParams(DOMUtil.childNodesToNamedList(node));
-        similarityFactory = (SimilarityFactory)obj;
-        similarityFactory.init(params);
-      } else {
-        // just like always, assume it's a Similarlity and get a ClassCastException - reasonable error handling
-        similarityFactory = new SimilarityFactory() {
-          public Similarity getSimilarity() {
-            return (Similarity) obj;
-          }
-        };
+      // just like always, assume it's a SimilarityProviderFactory and get a ClassCastException - reasonable error handling
+      // configure a factory, get a similarity back
+      NamedList<?> args = DOMUtil.childNodesToNamedList(node);
+      similarityProviderFactory = (SimilarityProviderFactory)obj;
+      similarityProviderFactory.init(args);
+      if (similarityProviderFactory instanceof SchemaAware){
+        schemaAware.add((SchemaAware) similarityProviderFactory);
       }
-      if (similarityFactory instanceof SchemaAware){
-        schemaAware.add((SchemaAware) similarityFactory);
-      }
-      log.debug("using similarity factory" + similarityFactory.getClass().getName());
+      log.debug("using similarityProvider factory" + similarityProviderFactory.getClass().getName());
     }
 
     node = (Node) xpath.evaluate("/schema/defaultSearchField/text()", document, XPathConstants.NODE);
@@ -809,6 +760,30 @@ public final class IndexSchema {
     return newArr;
   }
 
+  private Similarity readSimilarity(Node node) throws XPathExpressionException {
+    if (node==null) {
+      return null;
+    } else {
+      SimilarityFactory similarityFactory;
+      final Object obj = loader.newInstance(((Element) node).getAttribute("class"));
+      if (obj instanceof SimilarityFactory) {
+        // configure a factory, get a similarity back
+        SolrParams params = SolrParams.toSolrParams(DOMUtil.childNodesToNamedList(node));
+        similarityFactory = (SimilarityFactory)obj;
+        similarityFactory.init(params);
+      } else {
+        // just like always, assume it's a Similarity and get a ClassCastException - reasonable error handling
+        similarityFactory = new SimilarityFactory() {
+          @Override
+          public Similarity getSimilarity() {
+            return (Similarity) obj;
+          }
+        };
+      }
+      return similarityFactory.getSimilarity();
+    }
+  }
+
   //
   // <analyzer><tokenizer class="...."/><tokenizer class="...." arg="....">
   //
@@ -822,19 +797,23 @@ public final class IndexSchema {
     NamedNodeMap attrs = node.getAttributes();
     String analyzerName = DOMUtil.getAttr(attrs,"class");
     if (analyzerName != null) {
-      // No need to be core-aware as Analyzers are not in the core-aware list
-      final Class<? extends Analyzer> clazz = loader.findClass(analyzerName).asSubclass(Analyzer.class);
       try {
+        // No need to be core-aware as Analyzers are not in the core-aware list
+        final Class<? extends Analyzer> clazz = loader.findClass
+          (analyzerName).asSubclass(Analyzer.class);
+
         try {
-          // first try to use a ctor with version parameter (needed for many new Analyzers that have no default one anymore)
+          // first try to use a ctor with version parameter 
+          // (needed for many new Analyzers that have no default one anymore)
           Constructor<? extends Analyzer> cnstr = clazz.getConstructor(Version.class);
           final String matchVersionStr = DOMUtil.getAttr(attrs, LUCENE_MATCH_VERSION_PARAM);
           final Version luceneMatchVersion = (matchVersionStr == null) ?
             solrConfig.luceneMatchVersion : Config.parseLuceneVersionString(matchVersionStr);
           if (luceneMatchVersion == null) {
-            throw new SolrException( SolrException.ErrorCode.SERVER_ERROR,
-              "Configuration Error: Analyzer '" + clazz.getName() +
-              "' needs a 'luceneMatchVersion' parameter");
+            throw new SolrException
+              ( SolrException.ErrorCode.SERVER_ERROR,
+                "Configuration Error: Analyzer '" + clazz.getName() +
+                "' needs a 'luceneMatchVersion' parameter");
           }
           return cnstr.newInstance(luceneMatchVersion);
         } catch (NoSuchMethodException nsme) {
@@ -842,8 +821,9 @@ public final class IndexSchema {
           return clazz.newInstance();
         }
       } catch (Exception e) {
+        log.error("Cannot load analyzer: "+analyzerName, e);
         throw new SolrException( SolrException.ErrorCode.SERVER_ERROR,
-              "Cannot load analyzer: "+analyzerName );
+                                 "Cannot load analyzer: "+analyzerName, e );
       }
     }
 
@@ -1005,6 +985,7 @@ public final class IndexSchema {
       return new SchemaField(prototype, name);
     }
 
+    @Override
     public String toString() {
       return prototype.toString();
     }
@@ -1275,37 +1256,6 @@ public final class IndexSchema {
       }
     }
     return sf.toArray(new SchemaField[sf.size()]);
-  }
-  /**
-   * Get all copy fields, both the static and the dynamic ones.
-   * 
-   * @param sourceField
-   * @return Array of fields to copy to.
-   * @deprecated Use {@link #getCopyFieldsList(String)} instead.
-   */
-  @Deprecated
-  public SchemaField[] getCopyFields(String sourceField) {
-    // This is the List that holds all the results, dynamic or not.
-    List<SchemaField> matchCopyFields = new ArrayList<SchemaField>();
-
-    // Get the dynamic results into the list.
-    for(DynamicCopy dynamicCopy : dynamicCopyFields) {
-      if(dynamicCopy.matches(sourceField)) {
-        matchCopyFields.add(dynamicCopy.getTargetField(sourceField));
-      }
-    }
-
-    // Get the fixed ones, if there are any and add them.
-    final List<CopyField> copyFields = copyFieldsMap.get(sourceField);
-    if (copyFields!=null) {
-      final Iterator<CopyField> it = copyFields.iterator();
-      while (it.hasNext()) {
-        matchCopyFields.add(it.next().getDestination());
-      }
-    }
-
-    // Construct the results by transforming the list into an array.
-    return matchCopyFields.toArray(new SchemaField[matchCopyFields.size()]);
   }
 
   /**

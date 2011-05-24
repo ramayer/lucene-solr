@@ -33,25 +33,27 @@ class DisjunctionMaxScorer extends Scorer {
   private final float tieBreakerMultiplier;
   private int doc = -1;
 
+  /* Used when scoring currently matching doc. */
+  private float scoreSum;
+  private float scoreMax;
+
   /**
    * Creates a new instance of DisjunctionMaxScorer
    * 
+   * @param weight
+   *          The Weight to be used.
    * @param tieBreakerMultiplier
    *          Multiplier applied to non-maximum-scoring subqueries for a
    *          document as they are summed into the result.
-   * @param similarity
-   *          -- not used since our definition involves neither coord nor terms
-   *          directly
    * @param subScorers
    *          The sub scorers this Scorer should iterate on
    * @param numScorers
    *          The actual number of scorers to iterate on. Note that the array's
    *          length may be larger than the actual number of scorers.
    */
-  public DisjunctionMaxScorer(float tieBreakerMultiplier,
-      Similarity similarity, Scorer[] subScorers, int numScorers) throws IOException {
-    super(similarity);
-
+  public DisjunctionMaxScorer(Weight weight, float tieBreakerMultiplier,
+      Scorer[] subScorers, int numScorers) throws IOException {
+    super(weight);
     this.tieBreakerMultiplier = tieBreakerMultiplier;
     // The passed subScorers array includes only scorers which have documents
     // (DisjunctionMaxQuery takes care of that), and their nextDoc() was already
@@ -90,21 +92,21 @@ class DisjunctionMaxScorer extends Scorer {
   @Override
   public float score() throws IOException {
     int doc = subScorers[0].docID();
-    float[] sum = { subScorers[0].score() }, max = { sum[0] };
+    scoreSum = scoreMax = subScorers[0].score();
     int size = numScorers;
-    scoreAll(1, size, doc, sum, max);
-    scoreAll(2, size, doc, sum, max);
-    return max[0] + (sum[0] - max[0]) * tieBreakerMultiplier;
+    scoreAll(1, size, doc);
+    scoreAll(2, size, doc);
+    return scoreMax + (scoreSum - scoreMax) * tieBreakerMultiplier;
   }
 
   // Recursively iterate all subScorers that generated last doc computing sum and max
-  private void scoreAll(int root, int size, int doc, float[] sum, float[] max) throws IOException {
+  private void scoreAll(int root, int size, int doc) throws IOException {
     if (root < size && subScorers[root].docID() == doc) {
       float sub = subScorers[root].score();
-      sum[0] += sub;
-      max[0] = Math.max(max[0], sub);
-      scoreAll((root<<1)+1, size, doc, sum, max);
-      scoreAll((root<<1)+2, size, doc, sum, max);
+      scoreSum += sub;
+      scoreMax = Math.max(scoreMax, sub);
+      scoreAll((root<<1)+1, size, doc);
+      scoreAll((root<<1)+2, size, doc);
     }
   }
 

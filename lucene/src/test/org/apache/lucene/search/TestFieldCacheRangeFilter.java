@@ -27,6 +27,7 @@ import org.apache.lucene.analysis.MockAnalyzer;
 import org.apache.lucene.document.Document;
 import org.apache.lucene.document.Field;
 import org.apache.lucene.store.Directory;
+import org.junit.Test;
 
 /**
  * A basic 'positive' Unit test class for the FieldCacheRangeFilter class.
@@ -39,10 +40,11 @@ import org.apache.lucene.store.Directory;
  */
 public class TestFieldCacheRangeFilter extends BaseTestRangeFilter {
 
+  @Test
   public void testRangeFilterId() throws IOException {
 
     IndexReader reader = signedIndexReader;
-    IndexSearcher search = new IndexSearcher(reader);
+    IndexSearcher search = newSearcher(reader);
 
     int medId = ((maxId - minId) / 2);
         
@@ -120,13 +122,14 @@ public class TestFieldCacheRangeFilter extends BaseTestRangeFilter {
 
     result = search.search(q,FieldCacheRangeFilter.newStringRange("id",medIP,medIP,T,T), numDocs).scoreDocs;
     assertEquals("med,med,T,T", 1, result.length);
-        
+    search.close();
   }
 
+  @Test
   public void testFieldCacheRangeFilterRand() throws IOException {
 
     IndexReader reader = signedIndexReader;
-    IndexSearcher search = new IndexSearcher(reader);
+    IndexSearcher search = newSearcher(reader);
 
     String minRP = pad(signedIndexDir.minR);
     String maxRP = pad(signedIndexDir.maxR);
@@ -182,14 +185,16 @@ public class TestFieldCacheRangeFilter extends BaseTestRangeFilter {
     assertEquals("max,max,T,T", 1, result.length);
     result = search.search(q,FieldCacheRangeFilter.newStringRange("rand",maxRP,null,T,F), numDocs).scoreDocs;
     assertEquals("max,nul,T,T", 1, result.length);
+    search.close();
   }
   
   // byte-ranges cannot be tested, because all ranges are too big for bytes, need an extra range for that
 
+  @Test
   public void testFieldCacheRangeFilterShorts() throws IOException {
 
     IndexReader reader = signedIndexReader;
-    IndexSearcher search = new IndexSearcher(reader);
+    IndexSearcher search = newSearcher(reader);
 
     int numDocs = reader.numDocs();
     int medId = ((maxId - minId) / 2);
@@ -273,12 +278,14 @@ public class TestFieldCacheRangeFilter extends BaseTestRangeFilter {
     assertEquals("overflow special case", 0, result.length);
     result = search.search(q,FieldCacheRangeFilter.newShortRange("id",maxIdO,minIdO,T,T), numDocs).scoreDocs;
     assertEquals("inverse range", 0, result.length);
+    search.close();
   }
   
+  @Test
   public void testFieldCacheRangeFilterInts() throws IOException {
 
     IndexReader reader = signedIndexReader;
-    IndexSearcher search = new IndexSearcher(reader);
+    IndexSearcher search = newSearcher(reader);
 
     int numDocs = reader.numDocs();
     int medId = ((maxId - minId) / 2);
@@ -363,12 +370,14 @@ public class TestFieldCacheRangeFilter extends BaseTestRangeFilter {
     assertEquals("overflow special case", 0, result.length);
     result = search.search(q,FieldCacheRangeFilter.newIntRange("id",maxIdO,minIdO,T,T), numDocs).scoreDocs;
     assertEquals("inverse range", 0, result.length);
+    search.close();
   }
   
+  @Test
   public void testFieldCacheRangeFilterLongs() throws IOException {
 
     IndexReader reader = signedIndexReader;
-    IndexSearcher search = new IndexSearcher(reader);
+    IndexSearcher search = newSearcher(reader);
 
     int numDocs = reader.numDocs();
     int medId = ((maxId - minId) / 2);
@@ -453,14 +462,16 @@ public class TestFieldCacheRangeFilter extends BaseTestRangeFilter {
     assertEquals("overflow special case", 0, result.length);
     result = search.search(q,FieldCacheRangeFilter.newLongRange("id",maxIdO,minIdO,T,T), numDocs).scoreDocs;
     assertEquals("inverse range", 0, result.length);
+    search.close();
   }
   
   // float and double tests are a bit minimalistic, but its complicated, because missing precision
   
+  @Test
   public void testFieldCacheRangeFilterFloats() throws IOException {
 
     IndexReader reader = signedIndexReader;
-    IndexSearcher search = new IndexSearcher(reader);
+    IndexSearcher search = newSearcher(reader);
 
     int numDocs = reader.numDocs();
     Float minIdO = Float.valueOf(minId + .5f);
@@ -483,12 +494,14 @@ public class TestFieldCacheRangeFilter extends BaseTestRangeFilter {
     assertEquals("infinity special case", 0, result.length);
     result = search.search(q,FieldCacheRangeFilter.newFloatRange("id",null,Float.valueOf(Float.NEGATIVE_INFINITY),F,F), numDocs).scoreDocs;
     assertEquals("infinity special case", 0, result.length);
+    search.close();
   }
   
+  @Test
   public void testFieldCacheRangeFilterDoubles() throws IOException {
 
     IndexReader reader = signedIndexReader;
-    IndexSearcher search = new IndexSearcher(reader);
+    IndexSearcher search = newSearcher(reader);
 
     int numDocs = reader.numDocs();
     Double minIdO = Double.valueOf(minId + .5);
@@ -511,17 +524,19 @@ public class TestFieldCacheRangeFilter extends BaseTestRangeFilter {
     assertEquals("infinity special case", 0, result.length);
     result = search.search(q,FieldCacheRangeFilter.newDoubleRange("id",null, Double.valueOf(Double.NEGATIVE_INFINITY),F,F), numDocs).scoreDocs;
     assertEquals("infinity special case", 0, result.length);
+    search.close();
   }
   
   // test using a sparse index (with deleted docs).
+  @Test
   public void testSparseIndex() throws IOException {
-    Directory dir = newDirectory(rand);
-    IndexWriter writer = new IndexWriter(dir, newIndexWriterConfig(rand, TEST_VERSION_CURRENT, new MockAnalyzer()));
+    Directory dir = newDirectory();
+    IndexWriter writer = new IndexWriter(dir, newIndexWriterConfig( TEST_VERSION_CURRENT, new MockAnalyzer(random)));
 
     for (int d = -20; d <= 20; d++) {
       Document doc = new Document();
-      doc.add(new Field("id",Integer.toString(d), Field.Store.NO, Field.Index.NOT_ANALYZED));
-      doc.add(new Field("body","body", Field.Store.NO, Field.Index.NOT_ANALYZED));
+      doc.add(newField("id",Integer.toString(d), Field.Store.NO, Field.Index.NOT_ANALYZED));
+      doc.add(newField("body","body", Field.Store.NO, Field.Index.NOT_ANALYZED));
       writer.addDocument(doc);
     }
     
@@ -530,7 +545,7 @@ public class TestFieldCacheRangeFilter extends BaseTestRangeFilter {
     writer.close();
 
     IndexReader reader = IndexReader.open(dir, true);
-    IndexSearcher search = new IndexSearcher(reader);
+    IndexSearcher search = newSearcher(reader);
     assertTrue(reader.hasDeletions());
 
     ScoreDoc[] result;
@@ -550,6 +565,7 @@ public class TestFieldCacheRangeFilter extends BaseTestRangeFilter {
 
     result = search.search(q,FieldCacheRangeFilter.newByteRange("id",Byte.valueOf((byte) -20),Byte.valueOf((byte) -10),T,T), 100).scoreDocs;
     assertEquals("find all", 11, result.length);
+    search.close();
     reader.close();
     dir.close();
   }

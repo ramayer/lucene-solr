@@ -18,13 +18,13 @@ package org.apache.lucene.search;
  */
 
 import java.io.IOException;
-import java.util.Random;
 
 import org.apache.lucene.analysis.MockAnalyzer;
 import org.apache.lucene.analysis.MockTokenizer;
 import org.apache.lucene.document.Document;
 import org.apache.lucene.document.Field;
 import org.apache.lucene.index.IndexReader;
+import org.apache.lucene.index.IndexReader.AtomicReaderContext;
 import org.apache.lucene.index.RandomIndexWriter;
 import org.apache.lucene.index.SlowMultiReaderWrapper;
 import org.apache.lucene.index.Term;
@@ -33,15 +33,13 @@ import org.apache.lucene.util.LuceneTestCase;
 
 public class BooleanFilterTest extends LuceneTestCase {
 	private Directory directory;
-	private IndexReader mainReader;
 	private IndexReader reader;
 
 	@Override
-	protected void setUp() throws Exception {
+	public void setUp() throws Exception {
 	  super.setUp();
-	  Random random = newRandom();
-		directory = newDirectory(random);
-		RandomIndexWriter writer = new RandomIndexWriter(random, directory, new MockAnalyzer(MockTokenizer.WHITESPACE, false));
+		directory = newDirectory();
+		RandomIndexWriter writer = new RandomIndexWriter(random, directory, new MockAnalyzer(random, MockTokenizer.WHITESPACE, false));
 		
 		//Add series of docs with filterable fields : acces rights, prices, dates and "in-stock" flags
 		addDoc(writer, "admin guest", "010", "20040101","Y");
@@ -49,14 +47,13 @@ public class BooleanFilterTest extends LuceneTestCase {
 		addDoc(writer, "guest", "020", "20050101","Y");
 		addDoc(writer, "admin", "020", "20050101","Maybe");
 		addDoc(writer, "admin guest", "030", "20050101","N");
-		mainReader = writer.getReader();
-		reader = SlowMultiReaderWrapper.wrap(mainReader);
+		reader = new SlowMultiReaderWrapper(writer.getReader());
 		writer.close();	
 	}
 	
 	@Override
-	protected void tearDown() throws Exception {
-	  mainReader.close();
+	public void tearDown() throws Exception {
+	  reader.close();
 	  directory.close();
 	  super.tearDown();
 	}
@@ -64,16 +61,16 @@ public class BooleanFilterTest extends LuceneTestCase {
 	private void addDoc(RandomIndexWriter writer, String accessRights, String price, String date, String inStock) throws IOException
 	{
 		Document doc=new Document();
-		doc.add(new Field("accessRights",accessRights,Field.Store.YES,Field.Index.ANALYZED));
-		doc.add(new Field("price",price,Field.Store.YES,Field.Index.ANALYZED));
-		doc.add(new Field("date",date,Field.Store.YES,Field.Index.ANALYZED));
-		doc.add(new Field("inStock",inStock,Field.Store.YES,Field.Index.ANALYZED));
+		doc.add(newField("accessRights",accessRights,Field.Store.YES,Field.Index.ANALYZED));
+		doc.add(newField("price",price,Field.Store.YES,Field.Index.ANALYZED));
+		doc.add(newField("date",date,Field.Store.YES,Field.Index.ANALYZED));
+		doc.add(newField("inStock",inStock,Field.Store.YES,Field.Index.ANALYZED));
 		writer.addDocument(doc);
 	}
 	
   private Filter getRangeFilter(String field,String lowerPrice, String upperPrice)
 	{
-    Filter f = new TermRangeFilter(field,lowerPrice,upperPrice,true,true);
+    Filter f = TermRangeFilter.newStringRange(field,lowerPrice,upperPrice,true,true);
     return f;
 	}
   private Filter getTermsFilter(String field,String text)
@@ -87,7 +84,7 @@ public class BooleanFilterTest extends LuceneTestCase {
         private void tstFilterCard(String mes, int expected, Filter filt)
         throws Throwable
         {
-          DocIdSetIterator disi = filt.getDocIdSet(reader).iterator();
+          DocIdSetIterator disi = filt.getDocIdSet(new AtomicReaderContext(reader)).iterator();
           int actual = 0;
           while (disi.nextDoc() != DocIdSetIterator.NO_MORE_DOCS) {
             actual++;

@@ -23,11 +23,6 @@ import org.apache.lucene.analysis.MockAnalyzer;
 
 public class TestQueryTermVector extends LuceneTestCase {
 
-
-  public TestQueryTermVector(String s) {
-    super(s);
-  }
-
   public void testConstructor() {
     BytesRef [] queryTerm = {new BytesRef("foo"), new BytesRef("bar"), new BytesRef("foo"), 
         new BytesRef("again"), new BytesRef("foo"), new BytesRef("bar"), new BytesRef("go"),
@@ -44,7 +39,7 @@ public class TestQueryTermVector extends LuceneTestCase {
     result = new QueryTermVector(null);
     assertTrue(result.getTerms().length == 0);
     
-    result = new QueryTermVector("foo bar foo again foo bar go go go", new MockAnalyzer());
+    result = new QueryTermVector("foo bar foo again foo bar go go go", new MockAnalyzer(random));
     terms = result.getTerms();
     assertTrue(terms.length == 4);
     freq = result.getTermFrequencies();
