@@ -486,6 +486,10 @@ New features
   document IDs and scores encountered during the search, and "replay" them to 
   another Collector. (Mike McCandless, Shai Erera)
 
+* LUCENE-3112: Added experimental IndexWriter.add/updateDocuments,
+  enabling a block of documents to be indexed, atomically, with
+  guaranteed sequential docIDs.  (Mike McCandless)
+
 API Changes
 
 * LUCENE-3061: IndexWriter's getNextMerge() and merge(OneMerge) are now public
@@ -540,6 +544,9 @@ Build
 
 * LUCENE-3006: Building javadocs will fail on warnings by default. 
   Override with -Dfailonjavadocwarning=false (sarowe, gsingers)
+
+* LUCENE-3128: "ant eclipse" creates a .project file for easier Eclipse
+  integration (unless one already exists). (Daniel Serodio via Shai Erera)
 
 Test Cases
 
