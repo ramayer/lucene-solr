@@ -1,14 +1,3 @@
-Apache Lucene/Solr
+# An ancient version of Apache Lucene/Solr
 
-lucene/ is a search engine library
-solr/ is a search engine server that uses lucene
-modules/ is shared code
-
-To compile the sources run 'ant compile'
-To run all the tests run 'ant test'
-To setup your ide run 'ant idea' or 'ant eclipse'
-For Maven info, see dev-tools/maven/README.maven.
-
-For more information on how to contribute see:
-http://wiki.apache.org/lucene-java/HowToContribute
-http://wiki.apache.org/solr/HowToContribute
+You don't want to use this repository.  It only exists because I'm still supporting a system using this version.
